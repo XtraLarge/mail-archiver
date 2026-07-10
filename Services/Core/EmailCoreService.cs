@@ -395,7 +395,7 @@ namespace MailArchiver.Services.Core
         //   "exact phrase"   -> phrase match
         //   subject:/body:/from:/to:  -> field-specific (substring)
         //   *term*           -> substring match (backed by the pg_trgm index)
-        private (string tsQuery, List<string> phrases, Dictionary<string, List<string>> fieldSearches, Dictionary<string, List<string>> fieldPhrases, List<(string term, bool negated)> substrings) ParseSearchTermForTsQuery(string searchTerm)
+        internal static (string tsQuery, List<string> phrases, Dictionary<string, List<string>> fieldSearches, Dictionary<string, List<string>> fieldPhrases, List<(string term, bool negated)> substrings) ParseSearchTermForTsQuery(string searchTerm)
         {
             if (string.IsNullOrWhiteSpace(searchTerm))
                 return (null, new List<string>(), new Dictionary<string, List<string>>(), new Dictionary<string, List<string>>(), new List<(string, bool)>());
