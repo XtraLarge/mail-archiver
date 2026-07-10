@@ -1201,6 +1201,12 @@
   <data name="AdvancedSearchInfo3" xml:space="preserve">
     <value>• Kombinationen aus Beidem: "car insurance" subject:invoice from:insurance</value>
   </data>
+  <data name="AdvancedSearchInfo4" xml:space="preserve">
+    <value>• Begriffe ausschließen mit Minus, Alternativen mit OR: rechnung -mahnung, auto OR fahrrad</value>
+  </data>
+  <data name="AdvancedSearchInfo5" xml:space="preserve">
+    <value>• Teilwort-Suche mit Sternchen: *rechn* findet auch „Abrechnung“</value>
+  </data>
   <data name="Preview" xml:space="preserve">
     <value>Vorschau</value>
   </data>

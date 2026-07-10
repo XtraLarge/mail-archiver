@@ -1198,6 +1198,12 @@
   <data name="AdvancedSearchInfo3" xml:space="preserve">
     <value>• Combine both: "car insurance" subject:invoice from:insurance</value>
   </data>
+  <data name="AdvancedSearchInfo4" xml:space="preserve">
+    <value>• Exclude terms with a minus and match alternatives with OR: invoice -reminder, car OR bike</value>
+  </data>
+  <data name="AdvancedSearchInfo5" xml:space="preserve">
+    <value>• Partial-word (substring) search with asterisks: *voice* also matches &quot;invoices&quot;</value>
+  </data>
   <data name="Preview" xml:space="preserve">
     <value>Preview</value>
   </data>
