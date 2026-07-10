@@ -1204,6 +1204,42 @@
   <data name="AdvancedSearchInfo5" xml:space="preserve">
     <value>• Partial-word (substring) search with asterisks: *voice* also matches &quot;invoices&quot;</value>
   </data>
+  <data name="AdvBuilderTitle" xml:space="preserve">
+    <value>Search builder</value>
+  </data>
+  <data name="AdvBuilderAll" xml:space="preserve">
+    <value>All of these words</value>
+  </data>
+  <data name="AdvBuilderAny" xml:space="preserve">
+    <value>Any of these words</value>
+  </data>
+  <data name="AdvBuilderNone" xml:space="preserve">
+    <value>None of these words</value>
+  </data>
+  <data name="AdvBuilderPhrase" xml:space="preserve">
+    <value>Exact phrase</value>
+  </data>
+  <data name="AdvBuilderSubstring" xml:space="preserve">
+    <value>Partial word (substring)</value>
+  </data>
+  <data name="AdvBuilderSubject" xml:space="preserve">
+    <value>Subject</value>
+  </data>
+  <data name="AdvBuilderFrom" xml:space="preserve">
+    <value>From</value>
+  </data>
+  <data name="AdvBuilderTo" xml:space="preserve">
+    <value>To</value>
+  </data>
+  <data name="AdvBuilderBody" xml:space="preserve">
+    <value>Body text</value>
+  </data>
+  <data name="AdvBuilderApply" xml:space="preserve">
+    <value>Insert into search box</value>
+  </data>
+  <data name="AdvBuilderPreview" xml:space="preserve">
+    <value>Preview</value>
+  </data>
   <data name="Preview" xml:space="preserve">
     <value>Preview</value>
   </data>

@@ -53,16 +53,58 @@
                                 <i class="bi bi-info-circle me-1"></i><strong>@Localizer["AdvancedSearch"]</strong> <i class="bi bi-chevron-down"></i>
                             </a>
                             <div class="collapse mt-1" id="advSearchHelp">
-                                @Localizer["AdvancedSearchInfo1"]<br>
-                                @Localizer["AdvancedSearchInfo2"]<br>
-                                @Localizer["AdvancedSearchInfo3"]<br>
-                                @Localizer["AdvancedSearchInfo4"]<br>
-                                @Localizer["AdvancedSearchInfo5"]
-                                <div class="mt-2 d-flex flex-wrap gap-1">
-                                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 search-example" data-insert="-">-wort</button>
-                                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 search-example" data-insert="OR ">OR</button>
-                                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 search-example" data-insert="*teil*">*teil*</button>
-                                    <button type="button" class="btn btn-outline-secondary btn-sm py-0 search-example" data-insert="subject:">subject:</button>
+                                <div class="card card-body p-2">
+                                    <div class="fw-semibold mb-2"><i class="bi bi-sliders me-1"></i>@Localizer["AdvBuilderTitle"]</div>
+                                    <div class="row g-2">
+                                        <div class="col-12 col-lg-6">
+                                            <label class="form-label mb-0 small" for="adv_all">@Localizer["AdvBuilderAll"]</label>
+                                            <input type="text" class="form-control form-control-sm adv-field" id="adv_all" autocomplete="off" placeholder="rechnung 2024">
+                                        </div>
+                                        <div class="col-12 col-lg-6">
+                                            <label class="form-label mb-0 small" for="adv_any">@Localizer["AdvBuilderAny"]</label>
+                                            <input type="text" class="form-control form-control-sm adv-field" id="adv_any" autocomplete="off" placeholder="auto fahrrad">
+                                        </div>
+                                        <div class="col-12 col-lg-6">
+                                            <label class="form-label mb-0 small" for="adv_none">@Localizer["AdvBuilderNone"]</label>
+                                            <input type="text" class="form-control form-control-sm adv-field" id="adv_none" autocomplete="off" placeholder="mahnung werbung">
+                                        </div>
+                                        <div class="col-12 col-lg-6">
+                                            <label class="form-label mb-0 small" for="adv_phrase">@Localizer["AdvBuilderPhrase"]</label>
+                                            <input type="text" class="form-control form-control-sm adv-field" id="adv_phrase" autocomplete="off" placeholder="wichtiges meeting">
+                                        </div>
+                                        <div class="col-12 col-lg-6">
+                                            <label class="form-label mb-0 small" for="adv_sub">@Localizer["AdvBuilderSubstring"]</label>
+                                            <input type="text" class="form-control form-control-sm adv-field" id="adv_sub" autocomplete="off" placeholder="rechn">
+                                        </div>
+                                        <div class="col-6 col-lg-3">
+                                            <label class="form-label mb-0 small" for="adv_subject">@Localizer["AdvBuilderSubject"]</label>
+                                            <input type="text" class="form-control form-control-sm adv-field" id="adv_subject" autocomplete="off">
+                                        </div>
+                                        <div class="col-6 col-lg-3">
+                                            <label class="form-label mb-0 small" for="adv_from">@Localizer["AdvBuilderFrom"]</label>
+                                            <input type="text" class="form-control form-control-sm adv-field" id="adv_from" autocomplete="off">
+                                        </div>
+                                        <div class="col-6 col-lg-3">
+                                            <label class="form-label mb-0 small" for="adv_to">@Localizer["AdvBuilderTo"]</label>
+                                            <input type="text" class="form-control form-control-sm adv-field" id="adv_to" autocomplete="off">
+                                        </div>
+                                        <div class="col-6 col-lg-3">
+                                            <label class="form-label mb-0 small" for="adv_body">@Localizer["AdvBuilderBody"]</label>
+                                            <input type="text" class="form-control form-control-sm adv-field" id="adv_body" autocomplete="off">
+                                        </div>
+                                    </div>
+                                    <div class="d-flex flex-wrap align-items-center gap-2 mt-2">
+                                        <button type="button" class="btn btn-primary btn-sm" id="advApply"><i class="bi bi-box-arrow-up me-1"></i>@Localizer["AdvBuilderApply"]</button>
+                                        <span class="small text-muted">@Localizer["AdvBuilderPreview"]: <code id="advPreview"></code></span>
+                                    </div>
+                                    <hr class="my-2">
+                                    <div class="small text-muted">
+                                        @Localizer["AdvancedSearchInfo1"]<br>
+                                        @Localizer["AdvancedSearchInfo2"]<br>
+                                        @Localizer["AdvancedSearchInfo3"]<br>
+                                        @Localizer["AdvancedSearchInfo4"]<br>
+                                        @Localizer["AdvancedSearchInfo5"]
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1062,17 +1104,32 @@
             <text>initializeSelectionHandlers();</text>
         }
 
-        // Advanced-search example chips: insert the operator/example into the search box
-        document.querySelectorAll('.search-example').forEach(function (btn) {
-            btn.addEventListener('click', function () {
-                var inp = document.getElementById('SearchTerm');
-                if (!inp) return;
-                var ins = this.getAttribute('data-insert') || '';
-                var v = inp.value;
-                inp.value = (v && !v.endsWith(' ') ? v + ' ' : v) + ins;
-                inp.focus();
-            });
-        });
+        // Advanced search builder: compose the query syntax from the structured fields
+        (function () {
+            var box = document.getElementById('SearchTerm');
+            var preview = document.getElementById('advPreview');
+            function val(id) { var e = document.getElementById(id); return e ? e.value.trim() : ''; }
+            function words(id) { var s = val(id); return s ? s.split(/\s+/) : []; }
+            function fieldVal(s) { return /\s/.test(s) ? '"' + s.replace(/"/g, '') + '"' : s; }
+            function build() {
+                var p = [];
+                if (val('adv_all')) p.push(val('adv_all'));
+                if (words('adv_any').length) p.push(words('adv_any').join(' OR '));
+                words('adv_none').forEach(function (w) { p.push('-' + w.replace(/^-+/, '')); });
+                if (val('adv_phrase')) p.push('"' + val('adv_phrase').replace(/"/g, '') + '"');
+                words('adv_sub').forEach(function (w) { p.push('*' + w.replace(/\*/g, '') + '*'); });
+                if (val('adv_subject')) p.push('subject:' + fieldVal(val('adv_subject')));
+                if (val('adv_from')) p.push('from:' + fieldVal(val('adv_from')));
+                if (val('adv_to')) p.push('to:' + fieldVal(val('adv_to')));
+                if (val('adv_body')) p.push('body:' + fieldVal(val('adv_body')));
+                return p.join(' ');
+            }
+            function refresh() { if (preview) preview.textContent = build(); }
+            document.querySelectorAll('.adv-field').forEach(function (f) { f.addEventListener('input', refresh); });
+            var applyBtn = document.getElementById('advApply');
+            if (applyBtn) applyBtn.addEventListener('click', function () { if (box) { box.value = build(); box.focus(); } });
+            refresh();
+        })();
     });
 </script>
 }

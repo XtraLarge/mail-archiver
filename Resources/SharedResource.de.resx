@@ -1207,6 +1207,42 @@
   <data name="AdvancedSearchInfo5" xml:space="preserve">
     <value>• Teilwort-Suche mit Sternchen: *rechn* findet auch „Abrechnung“</value>
   </data>
+  <data name="AdvBuilderTitle" xml:space="preserve">
+    <value>Such-Baukasten</value>
+  </data>
+  <data name="AdvBuilderAll" xml:space="preserve">
+    <value>Alle diese Wörter</value>
+  </data>
+  <data name="AdvBuilderAny" xml:space="preserve">
+    <value>Irgendeines dieser Wörter</value>
+  </data>
+  <data name="AdvBuilderNone" xml:space="preserve">
+    <value>Keines dieser Wörter</value>
+  </data>
+  <data name="AdvBuilderPhrase" xml:space="preserve">
+    <value>Genauer Ausdruck</value>
+  </data>
+  <data name="AdvBuilderSubstring" xml:space="preserve">
+    <value>Teilwort (Substring)</value>
+  </data>
+  <data name="AdvBuilderSubject" xml:space="preserve">
+    <value>Betreff</value>
+  </data>
+  <data name="AdvBuilderFrom" xml:space="preserve">
+    <value>Von</value>
+  </data>
+  <data name="AdvBuilderTo" xml:space="preserve">
+    <value>An</value>
+  </data>
+  <data name="AdvBuilderBody" xml:space="preserve">
+    <value>Im Text</value>
+  </data>
+  <data name="AdvBuilderApply" xml:space="preserve">
+    <value>In Suchfeld übernehmen</value>
+  </data>
+  <data name="AdvBuilderPreview" xml:space="preserve">
+    <value>Vorschau</value>
+  </data>
   <data name="Preview" xml:space="preserve">
     <value>Vorschau</value>
   </data>
