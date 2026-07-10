@@ -24,6 +24,10 @@ namespace MailArchiver.Services.Core
         private readonly DateTimeHelper _dateTimeHelper;
         private readonly BatchOperationOptions _batchOptions;
 
+        // Command timeout (seconds) for the raw ADO.NET search queries; the Npgsql default of 30s
+        // aborts legitimately long full-text searches before they finish.
+        private const int SearchCommandTimeoutSeconds = 120;
+
         public EmailCoreService(
             MailArchiverDbContext context,
             ILogger<EmailCoreService> logger,
@@ -89,7 +93,7 @@ namespace MailArchiver.Services.Core
             // Full-text search condition
             if (!string.IsNullOrWhiteSpace(searchTerm))
             {
-                var (tsQuery, phrases, fieldSearches, fieldPhrases) = ParseSearchTermForTsQuery(searchTerm);
+                var (tsQuery, phrases, fieldSearches, fieldPhrases, substrings) = ParseSearchTermForTsQuery(searchTerm);
                 var searchConditions = new List<string>();
 
                 if (!string.IsNullOrEmpty(tsQuery))
@@ -183,6 +187,14 @@ namespace MailArchiver.Services.Core
                             paramCounter++;
                         }
                     }
+                }
+
+                foreach (var sub in substrings)
+                {
+                    var likeCond = $@"lower(COALESCE(""Subject"", '') || ' ' || COALESCE(""Body"", '') || ' ' || COALESCE(""From"", '') || ' ' || COALESCE(""To"", '') || ' ' || COALESCE(""Cc"", '') || ' ' || COALESCE(""Bcc"", '')) LIKE '%' || lower(@param{paramCounter}) || '%'";
+                    searchConditions.Add(sub.negated ? $"NOT ({likeCond})" : likeCond);
+                    parameters.Add(new Npgsql.NpgsqlParameter($"@param{paramCounter}", sub.term));
+                    paramCounter++;
                 }
 
                 if (searchConditions.Any())
@@ -317,6 +329,7 @@ namespace MailArchiver.Services.Core
             await connection.OpenAsync();
 
             using var command = new Npgsql.NpgsqlCommand(sql, connection);
+            command.CommandTimeout = SearchCommandTimeoutSeconds;
             foreach (var parameter in parameters)
             {
                 command.Parameters.Add(parameter);
@@ -334,6 +347,7 @@ namespace MailArchiver.Services.Core
             await connection.OpenAsync();
 
             using var command = new Npgsql.NpgsqlCommand(sql, connection);
+            command.CommandTimeout = SearchCommandTimeoutSeconds;
             foreach (var parameter in parameters)
             {
                 command.Parameters.Add(parameter);
@@ -373,16 +387,32 @@ namespace MailArchiver.Services.Core
             return emails;
         }
 
-        private (string tsQuery, List<string> phrases, Dictionary<string, List<string>> fieldSearches, Dictionary<string, List<string>> fieldPhrases) ParseSearchTermForTsQuery(string searchTerm)
+        // Parses the user's search term into a boolean tsquery plus phrase / field / substring parts.
+        // Supported free-text syntax:
+        //   term1 term2      -> AND (all present)
+        //   term1 OR term2   -> OR (alternative groups); "OR"/"ODER"/"|"
+        //   -term / !term    -> exclude (NOT)
+        //   "exact phrase"   -> phrase match
+        //   subject:/body:/from:/to:  -> field-specific (substring)
+        //   *term*           -> substring match (backed by the pg_trgm index)
+        private (string tsQuery, List<string> phrases, Dictionary<string, List<string>> fieldSearches, Dictionary<string, List<string>> fieldPhrases, List<(string term, bool negated)> substrings) ParseSearchTermForTsQuery(string searchTerm)
         {
             if (string.IsNullOrWhiteSpace(searchTerm))
-                return (null, new List<string>(), new Dictionary<string, List<string>>(), new Dictionary<string, List<string>>());
+                return (null, new List<string>(), new Dictionary<string, List<string>>(), new Dictionary<string, List<string>>(), new List<(string, bool)>());
+
+            // Terms shorter than this are matched exactly (no ":*" prefix) so a broad single/double
+            // char prefix cannot degenerate the GIN full-text index into a sequential scan.
+            const int MinPrefixLength = 3;
 
             var phrases = new List<string>();
-            var individualWords = new List<string>();
             var fieldSearches = new Dictionary<string, List<string>>();
             var fieldPhrases = new Dictionary<string, List<string>>();
+            var substrings = new List<(string term, bool negated)>();
             var validFields = new HashSet<string> { "subject", "body", "from", "to" };
+
+            // Free words collected into OR-separated AND-groups: "a b OR c" => (a & b) | c
+            var orGroups = new List<List<string>>();
+            var currentGroup = new List<string>();
 
             var regex = new Regex(@"""([^""]*)""|(\w+):(""([^""]*)""|(\S+))|(\S+)", RegexOptions.None);
             var matches = regex.Matches(searchTerm);
@@ -413,42 +443,75 @@ namespace MailArchiver.Services.Core
                         else if (match.Groups[5].Success)
                         {
                             var fieldTerm = match.Groups[5].Value.Trim();
-                            if (!string.IsNullOrEmpty(fieldTerm))
+                            var sanitizedField = Regex.Replace(fieldTerm, @"[&|!():\*]", "", RegexOptions.None);
+                            if (!string.IsNullOrEmpty(sanitizedField))
                             {
-                                var sanitized = Regex.Replace(fieldTerm, @"[&|!():\*]", "", RegexOptions.None);
-                                if (!string.IsNullOrEmpty(sanitized))
-                                {
-                                    if (!fieldSearches.ContainsKey(field))
-                                        fieldSearches[field] = new List<string>();
-                                    fieldSearches[field].Add(sanitized);
-                                }
+                                if (!fieldSearches.ContainsKey(field))
+                                    fieldSearches[field] = new List<string>();
+                                fieldSearches[field].Add(sanitizedField);
                             }
                         }
                     }
                 }
                 else if (match.Groups[6].Success)
                 {
-                    var word = match.Groups[6].Value.Trim();
-                    if (!string.IsNullOrEmpty(word))
+                    var token = match.Groups[6].Value.Trim();
+                    if (string.IsNullOrEmpty(token))
+                        continue;
+
+                    // OR operator -> start a new alternative group
+                    if (token.Equals("OR", StringComparison.OrdinalIgnoreCase) ||
+                        token.Equals("ODER", StringComparison.OrdinalIgnoreCase) ||
+                        token == "|")
                     {
-                        var sanitized = Regex.Replace(word, @"[&|!():\*]", "", RegexOptions.None);
-                        if (!string.IsNullOrEmpty(sanitized))
-                            individualWords.Add(sanitized);
+                        if (currentGroup.Count > 0)
+                        {
+                            orGroups.Add(currentGroup);
+                            currentGroup = new List<string>();
+                        }
+                        continue;
                     }
+
+                    // Exclusion (NOT) via leading - or !
+                    bool negated = false;
+                    if ((token.StartsWith("-") || token.StartsWith("!")) && token.Length > 1)
+                    {
+                        negated = true;
+                        token = token.Substring(1);
+                    }
+
+                    // Substring mode: *term* -> ILIKE via pg_trgm index
+                    if (token.Length > 2 && token.StartsWith("*") && token.EndsWith("*"))
+                    {
+                        var inner = token.Substring(1, token.Length - 2);
+                        var sanitizedSub = Regex.Replace(inner, @"[%_\\]", "", RegexOptions.None);
+                        if (!string.IsNullOrEmpty(sanitizedSub))
+                            substrings.Add((sanitizedSub, negated));
+                        continue;
+                    }
+
+                    // Normal word -> tsquery atom (conditional prefix match)
+                    var sanitized = Regex.Replace(token, @"[&|!():\*<>'""]", "", RegexOptions.None);
+                    if (string.IsNullOrEmpty(sanitized))
+                        continue;
+
+                    var atom = (negated ? "!" : "") + sanitized + (sanitized.Length >= MinPrefixLength ? ":*" : "");
+                    currentGroup.Add(atom);
                 }
             }
 
-            string tsQuery = null;
-            if (individualWords.Any())
-            {
-                // Use prefix matching (:*) for each term to enable partial word matching
-                // This allows "isenb" to match "isenboeck", "isenböck", etc.
-                // The GIN index supports prefix matching efficiently
-                var escapedTerms = individualWords.Select(t => t.Replace("'", "''") + ":*");
-                tsQuery = string.Join(" & ", escapedTerms);
-            }
+            if (currentGroup.Count > 0)
+                orGroups.Add(currentGroup);
 
-            return (tsQuery, phrases, fieldSearches, fieldPhrases);
+            string tsQuery = null;
+            var groupExprs = orGroups
+                .Where(g => g.Count > 0)
+                .Select(g => g.Count == 1 ? g[0] : "(" + string.Join(" & ", g) + ")")
+                .ToList();
+            if (groupExprs.Count > 0)
+                tsQuery = string.Join(" | ", groupExprs);
+
+            return (tsQuery, phrases, fieldSearches, fieldPhrases, substrings);
         }
 
         private string GetColumnNameForField(string fieldName)
@@ -561,14 +624,16 @@ namespace MailArchiver.Services.Core
             IQueryable<ArchivedEmail> searchQuery = baseQuery;
             if (!string.IsNullOrEmpty(searchTerm))
             {
-                var (tsQuery, phrases, fieldSearches, fieldPhrases) = ParseSearchTermForTsQuery(searchTerm);
+                var (tsQuery, phrases, fieldSearches, fieldPhrases, substrings) = ParseSearchTermForTsQuery(searchTerm);
 
                 if (!string.IsNullOrEmpty(tsQuery))
                 {
-                    // Split terms and strip the ':*' suffix (used for prefix matching in PostgreSQL full-text search)
-                    // The fallback ILike search already supports partial matching via %wildcard%
-                    var words = tsQuery.Split('&', StringSplitOptions.RemoveEmptyEntries)
-                                      .Select(w => w.Trim().Replace("''", "'").Replace(":*", ""))
+                    // Split terms and strip full-text operators (':*', '&', '|', '(', ')') for the ILike
+                    // fallback, which already does partial matching via %wildcard%. Negated ('!') atoms are
+                    // dropped here — the fallback cannot express NOT cleanly and over-including is safer.
+                    var words = tsQuery.Split(new[] { '&', '|' }, StringSplitOptions.RemoveEmptyEntries)
+                                      .Select(w => w.Trim().Replace("''", "'").Replace(":*", "").Replace("(", "").Replace(")", "").Trim())
+                                      .Where(w => w.Length > 0 && !w.StartsWith("!"))
                                       .ToList();
 
                     foreach (var word in words)
@@ -583,6 +648,27 @@ namespace MailArchiver.Services.Core
                             EF.Functions.ILike(e.Bcc, $"%{escapedWord}%")
                         );
                     }
+                }
+
+                foreach (var sub in substrings)
+                {
+                    var escapedSub = sub.term.Replace("'", "''");
+                    if (sub.negated)
+                        searchQuery = searchQuery.Where(e =>
+                            !(EF.Functions.ILike(e.Subject, $"%{escapedSub}%") ||
+                              EF.Functions.ILike(e.From, $"%{escapedSub}%") ||
+                              EF.Functions.ILike(e.To, $"%{escapedSub}%") ||
+                              EF.Functions.ILike(e.Body, $"%{escapedSub}%") ||
+                              EF.Functions.ILike(e.Cc, $"%{escapedSub}%") ||
+                              EF.Functions.ILike(e.Bcc, $"%{escapedSub}%")));
+                    else
+                        searchQuery = searchQuery.Where(e =>
+                            EF.Functions.ILike(e.Subject, $"%{escapedSub}%") ||
+                            EF.Functions.ILike(e.From, $"%{escapedSub}%") ||
+                            EF.Functions.ILike(e.To, $"%{escapedSub}%") ||
+                            EF.Functions.ILike(e.Body, $"%{escapedSub}%") ||
+                            EF.Functions.ILike(e.Cc, $"%{escapedSub}%") ||
+                            EF.Functions.ILike(e.Bcc, $"%{escapedSub}%"));
                 }
 
                 foreach (var phrase in phrases)
