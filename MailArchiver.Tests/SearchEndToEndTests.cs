@@ -7,6 +7,7 @@ using MailArchiver.Models;
 using MailArchiver.Services.Core;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using Xunit;
@@ -61,7 +62,7 @@ public class SearchEndToEndTests : IClassFixture<SearchDbFixture>
     {
         var opts = new DbContextOptionsBuilder<MailArchiverDbContext>().UseNpgsql(_fx.Conn).Options;
         var ctx = new MailArchiverDbContext(opts);
-        return new EmailCoreService(ctx, NullLogger<EmailCoreService>.Instance, null!, Options.Create(new BatchOperationOptions()));
+        return new EmailCoreService(ctx, NullLogger<EmailCoreService>.Instance, null!, Options.Create(new BatchOperationOptions()), new ConfigurationBuilder().Build());
     }
 
     private async Task<HashSet<int>> Ids(string term)

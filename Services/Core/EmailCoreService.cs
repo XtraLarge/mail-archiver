@@ -5,6 +5,7 @@ using MailArchiver.Services.Shared;
 using MailArchiver.Utilities;
 using MailArchiver.ViewModels;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using MimeKit;
 using System.Globalization;
@@ -24,20 +25,23 @@ namespace MailArchiver.Services.Core
         private readonly DateTimeHelper _dateTimeHelper;
         private readonly BatchOperationOptions _batchOptions;
 
-        // Command timeout (seconds) for the raw ADO.NET search queries; the Npgsql default of 30s
-        // aborts legitimately long full-text searches before they finish.
-        private const int SearchCommandTimeoutSeconds = 120;
+        // Command timeout (seconds) for the raw ADO.NET search queries. Honours the configured
+        // Npgsql:CommandTimeout (the same key the EF context uses) but enforces a floor so long
+        // full-text searches are not aborted by the Npgsql default of 30s.
+        private readonly int _searchCommandTimeoutSeconds;
 
         public EmailCoreService(
             MailArchiverDbContext context,
             ILogger<EmailCoreService> logger,
             DateTimeHelper dateTimeHelper,
-            IOptions<BatchOperationOptions> batchOptions)
+            IOptions<BatchOperationOptions> batchOptions,
+            IConfiguration configuration)
         {
             _context = context;
             _logger = logger;
             _dateTimeHelper = dateTimeHelper;
             _batchOptions = batchOptions.Value;
+            _searchCommandTimeoutSeconds = Math.Max(configuration.GetValue<int>("Npgsql:CommandTimeout", 60), 120);
         }
 
         #region Search Methods
@@ -329,7 +333,7 @@ namespace MailArchiver.Services.Core
             await connection.OpenAsync();
 
             using var command = new Npgsql.NpgsqlCommand(sql, connection);
-            command.CommandTimeout = SearchCommandTimeoutSeconds;
+            command.CommandTimeout = _searchCommandTimeoutSeconds;
             foreach (var parameter in parameters)
             {
                 command.Parameters.Add(parameter);
@@ -347,7 +351,7 @@ namespace MailArchiver.Services.Core
             await connection.OpenAsync();
 
             using var command = new Npgsql.NpgsqlCommand(sql, connection);
-            command.CommandTimeout = SearchCommandTimeoutSeconds;
+            command.CommandTimeout = _searchCommandTimeoutSeconds;
             foreach (var parameter in parameters)
             {
                 command.Parameters.Add(parameter);
@@ -539,6 +543,11 @@ namespace MailArchiver.Services.Core
             return System.Linq.Expressions.Expression.Lambda<Func<T, bool>>(body, p);
         }
 
+        private static System.Linq.Expressions.Expression<Func<T, bool>> NotPredicate<T>(
+            System.Linq.Expressions.Expression<Func<T, bool>> a)
+            => System.Linq.Expressions.Expression.Lambda<Func<T, bool>>(
+                System.Linq.Expressions.Expression.Not(a.Body), a.Parameters);
+
         private sealed class ParameterRebinder : System.Linq.Expressions.ExpressionVisitor
         {
             private readonly System.Linq.Expressions.ParameterExpression _from;
@@ -671,19 +680,21 @@ namespace MailArchiver.Services.Core
                     // Negated ('!') atoms are dropped — the fallback cannot express NOT cleanly.
                     foreach (var element in tsQuery.Split(" & ", StringSplitOptions.RemoveEmptyEntries))
                     {
-                        var terms = element.Trim().Trim('(', ')')
-                            .Split('|', StringSplitOptions.RemoveEmptyEntries)
-                            .Select(t => t.Trim().Replace("''", "'").Replace(":*", "").Trim())
-                            .Where(t => t.Length > 0 && !t.StartsWith("!"))
-                            .ToList();
-                        if (terms.Count == 0)
-                            continue;
-
-                        // OR within the element, AND across elements (successive Where calls).
-                        var predicate = FieldContainsPredicate(terms[0]);
-                        for (int i = 1; i < terms.Count; i++)
-                            predicate = OrElsePredicate(predicate, FieldContainsPredicate(terms[i]));
-                        searchQuery = searchQuery.Where(predicate);
+                        // OR within the element, AND across elements. Negated ('!') atoms become a NOT.
+                        System.Linq.Expressions.Expression<Func<ArchivedEmail, bool>> predicate = null;
+                        foreach (var raw in element.Trim().Trim('(', ')').Split('|', StringSplitOptions.RemoveEmptyEntries))
+                        {
+                            var t = raw.Trim();
+                            var negated = t.StartsWith("!");
+                            if (negated) t = t.Substring(1);
+                            t = t.Replace("''", "'").Replace(":*", "").Trim();
+                            if (t.Length == 0)
+                                continue;
+                            var termPredicate = negated ? NotPredicate(FieldContainsPredicate(t)) : FieldContainsPredicate(t);
+                            predicate = predicate == null ? termPredicate : OrElsePredicate(predicate, termPredicate);
+                        }
+                        if (predicate != null)
+                            searchQuery = searchQuery.Where(predicate);
                     }
                 }
 
