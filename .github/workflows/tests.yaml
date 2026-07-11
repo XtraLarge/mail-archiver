@@ -27,6 +27,8 @@ jobs:
     env:
       # Enables the DB-backed robustness tests (parser tsquery validity).
       MAILARCHIVER_TEST_DB: "Host=localhost;Port=5432;Database=mailarchiver_test;Username=mailuser;Password=masterkey"
+      # End-to-end tests create/drop the mail_archiver schema -> point ONLY at a disposable DB.
+      MAILARCHIVER_TEST_DB_RW: "Host=localhost;Port=5432;Database=mailarchiver_test;Username=mailuser;Password=masterkey"
 
     steps:
       - uses: actions/checkout@v4
