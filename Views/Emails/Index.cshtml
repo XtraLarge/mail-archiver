@@ -52,7 +52,28 @@
                             <a class="text-decoration-none" data-bs-toggle="collapse" href="#advSearchHelp" role="button" aria-expanded="false" aria-controls="advSearchHelp">
                                 <i class="bi bi-info-circle me-1"></i><strong>@Localizer["AdvancedSearch"]</strong> <i class="bi bi-chevron-down"></i>
                             </a>
-                            <div class="collapse mt-1" id="advSearchHelp">
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-3 col-lg-2 mb-3">
+                        <label asp-for="FromDate" class="form-label">@Localizer["FromDate"]</label>
+                        <input asp-for="FromDate" class="form-control form-control-sm" type="date" />
+                    </div>
+                    <div class="col-6 col-md-3 col-lg-2 mb-3">
+                        <label asp-for="ToDate" class="form-label">@Localizer["ToDate"]</label>
+                        <input asp-for="ToDate" class="form-control form-control-sm" type="date" />
+                    </div>
+                    <div class="col-12 col-md-6 col-lg-3 mb-3">
+                        <label asp-for="SelectedAccountId" class="form-label">@Localizer["Account"]</label>
+                        <select asp-for="SelectedAccountId" asp-items="Model.AccountOptions" class="form-select form-select-sm" id="accountSelect"></select>
+                    </div>
+                    <div class="col-12 col-md-6 col-lg-2 mb-3">
+                        <label asp-for="IsOutgoing" class="form-label">@Localizer["Direction"]</label>
+                        <select asp-for="IsOutgoing" asp-items="Model.DirectionOptions" class="form-select form-select-sm"></select>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-12">
+                                                    <div class="collapse mt-1" id="advSearchHelp">
                                 <div class="card card-body p-2">
                                     <div class="fw-semibold mb-2"><i class="bi bi-sliders me-1"></i>@Localizer["AdvBuilderTitle"]</div>
                                     <div class="row g-2">
@@ -84,13 +105,9 @@
                                             <label class="form-label mb-0 small" for="adv_from">@Localizer["AdvBuilderFrom"]</label>
                                             <input type="text" class="form-control form-control-sm adv-field" id="adv_from" autocomplete="off">
                                         </div>
-                                        <div class="col-6 col-lg-3">
+                                        <div class="col-12 col-lg-6">
                                             <label class="form-label mb-0 small" for="adv_to">@Localizer["AdvBuilderTo"]</label>
                                             <input type="text" class="form-control form-control-sm adv-field" id="adv_to" autocomplete="off">
-                                        </div>
-                                        <div class="col-6 col-lg-3">
-                                            <label class="form-label mb-0 small" for="adv_body">@Localizer["AdvBuilderBody"]</label>
-                                            <input type="text" class="form-control form-control-sm adv-field" id="adv_body" autocomplete="off">
                                         </div>
                                     </div>
                                     <div class="d-flex flex-wrap align-items-center gap-2 mt-2">
@@ -107,23 +124,6 @@
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                    </div>
-                    <div class="col-6 col-md-3 col-lg-2 mb-3">
-                        <label asp-for="FromDate" class="form-label">@Localizer["FromDate"]</label>
-                        <input asp-for="FromDate" class="form-control form-control-sm" type="date" />
-                    </div>
-                    <div class="col-6 col-md-3 col-lg-2 mb-3">
-                        <label asp-for="ToDate" class="form-label">@Localizer["ToDate"]</label>
-                        <input asp-for="ToDate" class="form-control form-control-sm" type="date" />
-                    </div>
-                    <div class="col-12 col-md-6 col-lg-3 mb-3">
-                        <label asp-for="SelectedAccountId" class="form-label">@Localizer["Account"]</label>
-                        <select asp-for="SelectedAccountId" asp-items="Model.AccountOptions" class="form-select form-select-sm" id="accountSelect"></select>
-                    </div>
-                    <div class="col-12 col-md-6 col-lg-2 mb-3">
-                        <label asp-for="IsOutgoing" class="form-label">@Localizer["Direction"]</label>
-                        <select asp-for="IsOutgoing" asp-items="Model.DirectionOptions" class="form-select form-select-sm"></select>
                     </div>
                 </div>
                 <div class="row">
@@ -1121,7 +1121,6 @@
                 if (val('adv_subject')) p.push('subject:' + fieldVal(val('adv_subject')));
                 if (val('adv_from')) p.push('from:' + fieldVal(val('adv_from')));
                 if (val('adv_to')) p.push('to:' + fieldVal(val('adv_to')));
-                if (val('adv_body')) p.push('body:' + fieldVal(val('adv_body')));
                 return p.join(' ');
             }
             function refresh() { if (preview) preview.textContent = build(); }

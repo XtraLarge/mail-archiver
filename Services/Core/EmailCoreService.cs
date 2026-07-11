@@ -72,7 +72,7 @@ namespace MailArchiver.Services.Core
             }
         }
 
-        private async Task<(List<ArchivedEmail> Emails, int TotalCount)> SearchEmailsOptimizedAsync(
+        internal async Task<(List<ArchivedEmail> Emails, int TotalCount)> SearchEmailsOptimizedAsync(
             string searchTerm,
             DateTime? fromDate,
             DateTime? toDate,
