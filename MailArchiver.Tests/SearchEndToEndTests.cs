@@ -101,4 +101,7 @@ public class SearchEndToEndTests : IClassFixture<SearchDbFixture>
 
     [Fact] public async Task Or_across_substrings() // Codex: *a* OR *b*
     { if (!_fx.Enabled) return; Assert.Equal(new HashSet<int>{1,2,5}, await Ids("*cyber* OR *fahrr*")); }
+
+    [Fact] public async Task Phrase_matches_exact()
+    { if (!_fx.Enabled) return; Assert.Equal(new HashSet<int>{1}, await Ids("\"WD Red\"")); }
 }

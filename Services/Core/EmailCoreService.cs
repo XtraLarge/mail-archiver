@@ -136,11 +136,23 @@ namespace MailArchiver.Services.Core
                                 paramCounter++;
                                 if (clause.Negated) cond = $"NOT ({cond})";
                             }
-                            else // Phrase
+                            else // Phrase: GIN @@ prefilter narrows rows, POSITION confirms the exact phrase.
                             {
-                                cond = $@"(POSITION(LOWER(@param{paramCounter}) IN LOWER(COALESCE(""Subject"", ''))) > 0 OR POSITION(LOWER(@param{paramCounter}) IN LOWER(COALESCE(""Body"", ''))) > 0 OR POSITION(LOWER(@param{paramCounter}) IN LOWER(COALESCE(""From"", ''))) > 0 OR POSITION(LOWER(@param{paramCounter}) IN LOWER(COALESCE(""To"", ''))) > 0 OR POSITION(LOWER(@param{paramCounter}) IN LOWER(COALESCE(""Cc"", ''))) > 0 OR POSITION(LOWER(@param{paramCounter}) IN LOWER(COALESCE(""Bcc"", ''))) > 0)";
-                                parameters.Add(new Npgsql.NpgsqlParameter($"@param{paramCounter}", clause.Text));
-                                paramCounter++;
+                                var phraseTs = BuildPhraseTsQuery(clause.Text);
+                                if (!string.IsNullOrEmpty(phraseTs))
+                                {
+                                    cond = $@"({FtsExpr} @@ to_tsquery('simple', @param{paramCounter}) AND (POSITION(LOWER(@param{paramCounter + 1}) IN LOWER(COALESCE(""Subject"", ''))) > 0 OR POSITION(LOWER(@param{paramCounter + 1}) IN LOWER(COALESCE(""Body"", ''))) > 0 OR POSITION(LOWER(@param{paramCounter + 1}) IN LOWER(COALESCE(""From"", ''))) > 0 OR POSITION(LOWER(@param{paramCounter + 1}) IN LOWER(COALESCE(""To"", ''))) > 0 OR POSITION(LOWER(@param{paramCounter + 1}) IN LOWER(COALESCE(""Cc"", ''))) > 0 OR POSITION(LOWER(@param{paramCounter + 1}) IN LOWER(COALESCE(""Bcc"", ''))) > 0))";
+                                    parameters.Add(new Npgsql.NpgsqlParameter($"@param{paramCounter}", phraseTs));
+                                    paramCounter++;
+                                    parameters.Add(new Npgsql.NpgsqlParameter($"@param{paramCounter}", clause.Text));
+                                    paramCounter++;
+                                }
+                                else
+                                {
+                                    cond = $@"(POSITION(LOWER(@param{paramCounter}) IN LOWER(COALESCE(""Subject"", ''))) > 0 OR POSITION(LOWER(@param{paramCounter}) IN LOWER(COALESCE(""Body"", ''))) > 0 OR POSITION(LOWER(@param{paramCounter}) IN LOWER(COALESCE(""From"", ''))) > 0 OR POSITION(LOWER(@param{paramCounter}) IN LOWER(COALESCE(""To"", ''))) > 0 OR POSITION(LOWER(@param{paramCounter}) IN LOWER(COALESCE(""Cc"", ''))) > 0 OR POSITION(LOWER(@param{paramCounter}) IN LOWER(COALESCE(""Bcc"", ''))) > 0)";
+                                    parameters.Add(new Npgsql.NpgsqlParameter($"@param{paramCounter}", clause.Text));
+                                    paramCounter++;
+                                }
                             }
                             conds.Add(cond);
                         }
@@ -490,6 +502,22 @@ namespace MailArchiver.Services.Core
                 }
             }
             return groups;
+        }
+
+        // Builds a GIN-indexable phrase tsquery ("w1 <-> w2 ...", prefix-matched) so exact-phrase
+        // searches can use the full-text index as a prefilter before the POSITION recheck.
+        private static string BuildPhraseTsQuery(string phrase)
+        {
+            if (string.IsNullOrWhiteSpace(phrase))
+                return null;
+            var terms = new List<string>();
+            foreach (var word in phrase.Split((char[])null, StringSplitOptions.RemoveEmptyEntries))
+            {
+                var sanitized = Regex.Replace(word, @"[&|!():\*]", "", RegexOptions.None);
+                if (!string.IsNullOrEmpty(sanitized))
+                    terms.Add(sanitized.Replace("'", "''") + ":*");
+            }
+            return terms.Count == 0 ? null : string.Join(" <-> ", terms);
         }
 
         private static string GetColumnForField(string field) => field switch
