@@ -83,6 +83,10 @@ public class SearchTermParserTests
     public void Negated_substring() => Assert.True(Assert.Single(Assert.Single(Parse("-*teil*"))).Negated);
 
     [Fact]
+    public void Substring_keeps_like_metacharacters()
+        => Assert.Equal("INV_2026", Assert.Single(Assert.Single(Parse("*INV_2026*"))).Text);
+
+    [Fact]
     public void Unknown_field_is_ignored() => Assert.Empty(Parse("bogus:value"));
 
     // ---- OR across non-word types (Codex regression tests) ----

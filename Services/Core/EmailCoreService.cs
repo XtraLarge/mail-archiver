@@ -41,7 +41,10 @@ namespace MailArchiver.Services.Core
             _logger = logger;
             _dateTimeHelper = dateTimeHelper;
             _batchOptions = batchOptions.Value;
-            _searchCommandTimeoutSeconds = Math.Max(configuration.GetValue<int>("Npgsql:CommandTimeout", 60), 120);
+            var configuredTimeout = configuration.GetValue<int>("Npgsql:CommandTimeout", 60);
+            // 0 = Npgsql's "no timeout"; honour it. Otherwise enforce a floor so the raw search
+            // commands are not aborted by the 30s default.
+            _searchCommandTimeoutSeconds = configuredTimeout == 0 ? 0 : Math.Max(configuredTimeout, 120);
         }
 
         #region Search Methods
@@ -124,8 +127,8 @@ namespace MailArchiver.Services.Core
                             }
                             else if (clause.Kind == ClauseKind.Substring)
                             {
-                                cond = $"{LowerConcatExpr} LIKE '%' || lower(@param{paramCounter}) || '%'";
-                                parameters.Add(new Npgsql.NpgsqlParameter($"@param{paramCounter}", clause.Text));
+                                cond = $"{LowerConcatExpr} LIKE '%' || lower(@param{paramCounter}) || '%' ESCAPE '\\'";
+                                parameters.Add(new Npgsql.NpgsqlParameter($"@param{paramCounter}", EscapeLike(clause.Text)));
                                 paramCounter++;
                                 if (clause.Negated) cond = $"NOT ({cond})";
                             }
@@ -353,12 +356,15 @@ namespace MailArchiver.Services.Core
 
         // Fallback helpers: build a composable "any searched field ILIKE %term%" predicate so the
         // EF fallback can preserve OR-groups (OR within a group, AND across groups).
+        // Escapes LIKE/ILIKE metacharacters so *term* / field terms match them literally (ESCAPE '\').
+        private static string EscapeLike(string s) => s.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
+
         private static System.Linq.Expressions.Expression<Func<ArchivedEmail, bool>> FieldContainsPredicate(string term)
         {
-            var pattern = "%" + term.Replace("'", "''") + "%";
-            return e => EF.Functions.ILike(e.Subject, pattern) || EF.Functions.ILike(e.From, pattern) ||
-                        EF.Functions.ILike(e.To, pattern) || EF.Functions.ILike(e.Body, pattern) ||
-                        EF.Functions.ILike(e.Cc, pattern) || EF.Functions.ILike(e.Bcc, pattern);
+            var pattern = "%" + EscapeLike(term) + "%";
+            return e => EF.Functions.ILike(e.Subject, pattern, "\\") || EF.Functions.ILike(e.From, pattern, "\\") ||
+                        EF.Functions.ILike(e.To, pattern, "\\") || EF.Functions.ILike(e.Body, pattern, "\\") ||
+                        EF.Functions.ILike(e.Cc, pattern, "\\") || EF.Functions.ILike(e.Bcc, pattern, "\\");
         }
 
         private static System.Linq.Expressions.Expression<Func<T, bool>> OrElsePredicate<T>(
@@ -374,14 +380,14 @@ namespace MailArchiver.Services.Core
 
         private static System.Linq.Expressions.Expression<Func<ArchivedEmail, bool>> FieldColumnPredicate(string column, string term)
         {
-            var pattern = "%" + term.Replace("'", "''") + "%";
+            var pattern = "%" + EscapeLike(term) + "%";
             return column switch
             {
-                "Subject" => e => EF.Functions.ILike(e.Subject, pattern),
-                "Body" => e => EF.Functions.ILike(e.Body, pattern),
-                "From" => e => EF.Functions.ILike(e.From, pattern),
-                "To" => e => EF.Functions.ILike(e.To, pattern),
-                _ => e => EF.Functions.ILike(e.Subject, pattern)
+                "Subject" => e => EF.Functions.ILike(e.Subject, pattern, "\\"),
+                "Body" => e => EF.Functions.ILike(e.Body, pattern, "\\"),
+                "From" => e => EF.Functions.ILike(e.From, pattern, "\\"),
+                "To" => e => EF.Functions.ILike(e.To, pattern, "\\"),
+                _ => e => EF.Functions.ILike(e.Subject, pattern, "\\")
             };
         }
 
@@ -491,7 +497,7 @@ namespace MailArchiver.Services.Core
                     }
                     if (token.Length > 2 && token.StartsWith("*") && token.EndsWith("*"))
                     {
-                        var inner = Regex.Replace(token.Substring(1, token.Length - 2), @"[%_\\]", "", RegexOptions.None);
+                        var inner = token.Substring(1, token.Length - 2); // LIKE metacharacters are escaped at build time, not stripped
                         if (inner.Length > 0)
                             Add(new SearchClause { Kind = ClauseKind.Substring, Text = inner, Negated = negated });
                         continue;
