@@ -39,11 +39,11 @@ public class SearchTermParserTests
         => Assert.Equal(expected, Parse(input).tsQuery);
 
     [Fact]
-    public void Multi_word_is_AND() => Assert.Equal("(rechnung:* & mahnung:*)", Parse("rechnung mahnung").tsQuery);
+    public void Multi_word_is_AND() => Assert.Equal("rechnung:* & mahnung:*", Parse("rechnung mahnung").tsQuery);
 
     [Fact]
     public void Mixed_length_words_and()
-        => Assert.Equal("(wd & red:* & 8 & tb)", Parse("wd red 8 tb").tsQuery);
+        => Assert.Equal("wd & red:* & 8 & tb", Parse("wd red 8 tb").tsQuery);
 
     [Theory]
     [InlineData("auto OR fahrrad")]
@@ -51,11 +51,19 @@ public class SearchTermParserTests
     [InlineData("auto ODER fahrrad")]
     [InlineData("auto | fahrrad")]
     public void Or_keyword_creates_alternatives(string input)
-        => Assert.Equal("auto:* | fahrrad:*", Parse(input).tsQuery);
+        => Assert.Equal("(auto:* | fahrrad:*)", Parse(input).tsQuery);
+
+    [Fact]
+    public void Or_binds_neighbours_not_top_level() // Codex #2: "all AND (any OR any)"
+        => Assert.Equal("invoice:* & (car:* | bike:*)", Parse("invoice car OR bike").tsQuery);
+
+    [Fact]
+    public void Chained_or_forms_single_group()
+        => Assert.Equal("(aaa:* | bbb:* | ccc:*)", Parse("aaa OR bbb OR ccc").tsQuery);
 
     [Fact]
     public void And_then_or_groups_correctly()
-        => Assert.Equal("(auto:* & rad:*) | bike:*", Parse("auto rad OR bike").tsQuery);
+        => Assert.Equal("auto:* & (rad:* | bike:*)", Parse("auto rad OR bike").tsQuery);
 
     [Theory]
     [InlineData("-mahnung")]
@@ -64,7 +72,7 @@ public class SearchTermParserTests
         => Assert.Equal("!mahnung:*", Parse(input).tsQuery);
 
     [Fact]
-    public void And_with_exclude() => Assert.Equal("(rechnung:* & !mahnung:*)", Parse("rechnung -mahnung").tsQuery);
+    public void And_with_exclude() => Assert.Equal("rechnung:* & !mahnung:*", Parse("rechnung -mahnung").tsQuery);
 
     [Fact]
     public void Substring_mode_populates_substrings_not_tsquery()
@@ -114,7 +122,7 @@ public class SearchTermParserTests
         Assert.Contains("car insurance", r.phrases);
         Assert.Contains("invoice", r.fieldSearches["subject"]);
         Assert.Contains(("teil", false), r.substrings);
-        Assert.Equal("(rechnung:* & !spam:*)", r.tsQuery);
+        Assert.Equal("rechnung:* & !spam:*", r.tsQuery);
     }
 
     [Theory]

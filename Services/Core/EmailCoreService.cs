@@ -410,9 +410,10 @@ namespace MailArchiver.Services.Core
             var substrings = new List<(string term, bool negated)>();
             var validFields = new HashSet<string> { "subject", "body", "from", "to" };
 
-            // Free words collected into OR-separated AND-groups: "a b OR c" => (a & b) | c
-            var orGroups = new List<List<string>>();
-            var currentGroup = new List<string>();
+            // Free words -> top-level AND of elements. OR binds its neighbours into an OR-group
+            // (Google-style): "a b OR c" => a & (b | c); "x y1 OR y2" => x & (y1 | y2).
+            var elements = new List<List<string>>();
+            bool pendingOr = false;
 
             var regex = new Regex(@"""([^""]*)""|(\w+):(""([^""]*)""|(\S+))|(\S+)", RegexOptions.None);
             var matches = regex.Matches(searchTerm);
@@ -459,16 +460,12 @@ namespace MailArchiver.Services.Core
                     if (string.IsNullOrEmpty(token))
                         continue;
 
-                    // OR operator -> start a new alternative group
+                    // OR operator -> the next atom joins the previous element as an alternative
                     if (token.Equals("OR", StringComparison.OrdinalIgnoreCase) ||
                         token.Equals("ODER", StringComparison.OrdinalIgnoreCase) ||
                         token == "|")
                     {
-                        if (currentGroup.Count > 0)
-                        {
-                            orGroups.Add(currentGroup);
-                            currentGroup = new List<string>();
-                        }
+                        pendingOr = elements.Count > 0; // ignore a leading OR (no left operand)
                         continue;
                     }
 
@@ -496,22 +493,63 @@ namespace MailArchiver.Services.Core
                         continue;
 
                     var atom = (negated ? "!" : "") + sanitized + (sanitized.Length >= MinPrefixLength ? ":*" : "");
-                    currentGroup.Add(atom);
+                    if (pendingOr && elements.Count > 0)
+                    {
+                        elements[elements.Count - 1].Add(atom); // OR: alternative of the previous element
+                        pendingOr = false;
+                    }
+                    else
+                    {
+                        elements.Add(new List<string> { atom });
+                    }
                 }
             }
 
-            if (currentGroup.Count > 0)
-                orGroups.Add(currentGroup);
+            // a trailing OR (pendingOr with no following atom) is simply ignored
 
             string tsQuery = null;
-            var groupExprs = orGroups
-                .Where(g => g.Count > 0)
-                .Select(g => g.Count == 1 ? g[0] : "(" + string.Join(" & ", g) + ")")
+            var elementExprs = elements
+                .Where(e => e.Count > 0)
+                .Select(e => e.Count == 1 ? e[0] : "(" + string.Join(" | ", e) + ")")
                 .ToList();
-            if (groupExprs.Count > 0)
-                tsQuery = string.Join(" | ", groupExprs);
+            if (elementExprs.Count > 0)
+                tsQuery = string.Join(" & ", elementExprs);
 
             return (tsQuery, phrases, fieldSearches, fieldPhrases, substrings);
+        }
+
+        // Fallback helpers: build a composable "any searched field ILIKE %term%" predicate so the
+        // EF fallback can preserve OR-groups (OR within a group, AND across groups).
+        private static System.Linq.Expressions.Expression<Func<ArchivedEmail, bool>> FieldContainsPredicate(string term)
+        {
+            var pattern = "%" + term.Replace("'", "''") + "%";
+            return e => EF.Functions.ILike(e.Subject, pattern) || EF.Functions.ILike(e.From, pattern) ||
+                        EF.Functions.ILike(e.To, pattern) || EF.Functions.ILike(e.Body, pattern) ||
+                        EF.Functions.ILike(e.Cc, pattern) || EF.Functions.ILike(e.Bcc, pattern);
+        }
+
+        private static System.Linq.Expressions.Expression<Func<T, bool>> OrElsePredicate<T>(
+            System.Linq.Expressions.Expression<Func<T, bool>> a,
+            System.Linq.Expressions.Expression<Func<T, bool>> b)
+        {
+            var p = System.Linq.Expressions.Expression.Parameter(typeof(T), "e");
+            var body = System.Linq.Expressions.Expression.OrElse(
+                new ParameterRebinder(a.Parameters[0], p).Visit(a.Body),
+                new ParameterRebinder(b.Parameters[0], p).Visit(b.Body));
+            return System.Linq.Expressions.Expression.Lambda<Func<T, bool>>(body, p);
+        }
+
+        private sealed class ParameterRebinder : System.Linq.Expressions.ExpressionVisitor
+        {
+            private readonly System.Linq.Expressions.ParameterExpression _from;
+            private readonly System.Linq.Expressions.ParameterExpression _to;
+            public ParameterRebinder(System.Linq.Expressions.ParameterExpression from, System.Linq.Expressions.ParameterExpression to)
+            {
+                _from = from;
+                _to = to;
+            }
+            protected override System.Linq.Expressions.Expression VisitParameter(System.Linq.Expressions.ParameterExpression node)
+                => node == _from ? _to : base.VisitParameter(node);
         }
 
         private string GetColumnNameForField(string fieldName)
@@ -628,25 +666,24 @@ namespace MailArchiver.Services.Core
 
                 if (!string.IsNullOrEmpty(tsQuery))
                 {
-                    // Split terms and strip full-text operators (':*', '&', '|', '(', ')') for the ILike
-                    // fallback, which already does partial matching via %wildcard%. Negated ('!') atoms are
-                    // dropped here — the fallback cannot express NOT cleanly and over-including is safer.
-                    var words = tsQuery.Split(new[] { '&', '|' }, StringSplitOptions.RemoveEmptyEntries)
-                                      .Select(w => w.Trim().Replace("''", "'").Replace(":*", "").Replace("(", "").Replace(")", "").Trim())
-                                      .Where(w => w.Length > 0 && !w.StartsWith("!"))
-                                      .ToList();
-
-                    foreach (var word in words)
+                    // tsQuery is a top-level AND of elements; an element may be an OR-group "(a | b)".
+                    // Rebuild the SAME structure for the ILike fallback so OR is not flattened to AND.
+                    // Negated ('!') atoms are dropped — the fallback cannot express NOT cleanly.
+                    foreach (var element in tsQuery.Split(" & ", StringSplitOptions.RemoveEmptyEntries))
                     {
-                        var escapedWord = word.Replace("'", "''");
-                        searchQuery = searchQuery.Where(e =>
-                            EF.Functions.ILike(e.Subject, $"%{escapedWord}%") ||
-                            EF.Functions.ILike(e.From, $"%{escapedWord}%") ||
-                            EF.Functions.ILike(e.To, $"%{escapedWord}%") ||
-                            EF.Functions.ILike(e.Body, $"%{escapedWord}%") ||
-                            EF.Functions.ILike(e.Cc, $"%{escapedWord}%") ||
-                            EF.Functions.ILike(e.Bcc, $"%{escapedWord}%")
-                        );
+                        var terms = element.Trim().Trim('(', ')')
+                            .Split('|', StringSplitOptions.RemoveEmptyEntries)
+                            .Select(t => t.Trim().Replace("''", "'").Replace(":*", "").Trim())
+                            .Where(t => t.Length > 0 && !t.StartsWith("!"))
+                            .ToList();
+                        if (terms.Count == 0)
+                            continue;
+
+                        // OR within the element, AND across elements (successive Where calls).
+                        var predicate = FieldContainsPredicate(terms[0]);
+                        for (int i = 1; i < terms.Count; i++)
+                            predicate = OrElsePredicate(predicate, FieldContainsPredicate(terms[i]));
+                        searchQuery = searchQuery.Where(predicate);
                     }
                 }
 
