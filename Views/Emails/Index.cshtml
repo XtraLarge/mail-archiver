@@ -111,10 +111,6 @@
                                             <input type="text" class="form-control form-control-sm adv-field" id="adv_sub" autocomplete="off" placeholder="rechn">
                                         </div>
                                     </div>
-                                    <div class="d-flex flex-wrap align-items-center gap-2 mt-2">
-                                        <button type="button" class="btn btn-primary btn-sm" id="advApply"><i class="bi bi-box-arrow-up me-1"></i>@Localizer["AdvBuilderApply"]</button>
-                                        <span class="small text-muted">@Localizer["AdvBuilderPreview"]: <code id="advPreview"></code></span>
-                                    </div>
                                     <hr class="my-2">
                                     <div class="small text-muted">
                                         @Localizer["AdvancedSearchInfo0"]<br>
@@ -1110,6 +1106,7 @@
         (function () {
             var box = document.getElementById('SearchTerm');
             var preview = document.getElementById('advPreview');
+            var advancedOpen = false;
             function val(id) { var e = document.getElementById(id); return e ? e.value.trim() : ''; }
             function words(id) { var s = val(id); return s ? s.split(/\s+/) : []; }
             function fieldVal(s) { return /\s/.test(s) ? '"' + s.replace(/"/g, '') + '"' : s; }
@@ -1126,7 +1123,7 @@
                 return p.join(' ');
             }
             function refresh() { if (preview) preview.textContent = build(); }
-            document.querySelectorAll('.adv-field').forEach(function (f) { f.addEventListener('input', refresh); });
+            document.querySelectorAll('.adv-field').forEach(function (f) { f.addEventListener('input', function () { refresh(); if (advancedOpen && box) box.value = build(); }); });
             var applyBtn = document.getElementById('advApply');
             if (applyBtn) applyBtn.addEventListener('click', function () { if (box) { box.value = build(); box.focus(); } });
             // On submit, compose the builder into the search box if the box is empty, so typing in
@@ -1171,10 +1168,20 @@
                 setField('adv_to', f.to);
             }
             var advCollapse = document.getElementById('advSearchHelp');
-            if (advCollapse) advCollapse.addEventListener('show.bs.collapse', function () {
-                if (box && box.value.trim()) parseIntoBuilder(box.value.trim());
-                refresh();
-            });
+            if (advCollapse) {
+                // Advanced mode: the search box becomes a read-only live preview of the builder.
+                advCollapse.addEventListener('show.bs.collapse', function () {
+                    if (box && box.value.trim()) parseIntoBuilder(box.value.trim());
+                    advancedOpen = true;
+                    if (box) { box.setAttribute('readonly', 'readonly'); box.value = build(); }
+                    refresh();
+                });
+                // Simple mode: the search box is editable again.
+                advCollapse.addEventListener('hide.bs.collapse', function () {
+                    advancedOpen = false;
+                    if (box) box.removeAttribute('readonly');
+                });
+            }
             refresh();
         })();
     });
