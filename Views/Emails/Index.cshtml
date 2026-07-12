@@ -83,17 +83,15 @@
                                                     <div class="collapse mt-1" id="advSearchHelp">
                                 <div class="card card-body p-2">
                                     <div class="row g-2">
-                                        <div class="col-12 col-md-6">
-                                            <label class="form-label mb-0 small" for="adv_from">@Localizer["AdvBuilderFrom"]</label>
-                                            <input type="text" class="form-control form-control-sm adv-field" id="adv_from" autocomplete="off">
-                                        </div>
-                                        <div class="col-12 col-md-6">
-                                            <label class="form-label mb-0 small" for="adv_to">@Localizer["AdvBuilderTo"]</label>
-                                            <input type="text" class="form-control form-control-sm adv-field" id="adv_to" autocomplete="off">
-                                        </div>
                                         <div class="col-12">
-                                            <label class="form-label mb-0 small" for="adv_subject">@Localizer["AdvBuilderSubject"]</label>
-                                            <input type="text" class="form-control form-control-sm adv-field" id="adv_subject" autocomplete="off">
+                                            <label class="form-label mb-0 small" for="adv_scope">@Localizer["AdvScopeLabel"]</label>
+                                            <select id="adv_scope" class="form-select form-select-sm adv-field">
+                                                <option value="">@Localizer["AdvScopeAll"]</option>
+                                                <option value="subject">@Localizer["AdvBuilderSubject"]</option>
+                                                <option value="from">@Localizer["AdvBuilderFrom"]</option>
+                                                <option value="to">@Localizer["AdvBuilderTo"]</option>
+                                                <option value="body">@Localizer["AdvScopeBody"]</option>
+                                            </select>
                                         </div>
                                         <div class="col-12"><hr class="my-1 opacity-25"></div>
                                         <div class="col-12 col-lg-6">
@@ -108,7 +106,7 @@
                                             <label class="form-label mb-0 small" for="adv_none">@Localizer["AdvBuilderNone"]</label>
                                             <input type="text" class="form-control form-control-sm adv-field" id="adv_none" autocomplete="off" placeholder="werbung &quot;bereits bezahlt&quot;">
                                         </div>
-                                        <div class="col-12 col-lg-6">
+                                        <div class="col-12 col-lg-6" id="adv_sub_col">
                                             <label class="form-label mb-0 small" for="adv_sub">@Localizer["AdvBuilderSubstring"]</label>
                                             <input type="text" class="form-control form-control-sm adv-field" id="adv_sub" autocomplete="off" placeholder="rechn">
                                         </div>
@@ -121,7 +119,8 @@
                                         @Localizer["AdvancedSearchInfo3"]<br>
                                         @Localizer["AdvancedSearchInfo4"]<br>
                                         @Localizer["AdvancedSearchInfo5"]<br>
-                                        @Localizer["AdvBuilderQuoteHint"]
+                                        @Localizer["AdvBuilderQuoteHint"]<br>
+                                        @Localizer["AdvBuilderGroupHint"]
                                     </div>
                                 </div>
                             </div>
@@ -1106,46 +1105,52 @@
         }
 
         // Advanced-Suche: Baukasten, Suchfeld und Anhang-Auswahl halten sich gegenseitig aktuell.
-        // Bidirektional bei Enter oder Verlassen eines Feldes (change/Enter) - kein Read-only-Modus.
+        // Bidirektional bei Enter/Verlassen (change/Enter). "Suchen in" scopet den Kombinations-Block
+        // als feld:(...)-Gruppe (Gmail-Stil); Anhang bleibt orthogonal hinter dem Suchfeld.
         (function () {
             var box = document.getElementById('SearchTerm');
             var attachSel = document.getElementById('adv_attach');
+            var scopeSel = document.getElementById('adv_scope');
+            var subCol = document.getElementById('adv_sub_col');
+            var VALIDFIELDS = { subject: 1, from: 1, to: 1, body: 1 };
             function val(id) { var e = document.getElementById(id); return e ? e.value.trim() : ''; }
             function tokenize(s) { return s.match(/[-!]?"[^"]*"|\S+/g) || []; }
             function toks(id) { return tokenize(val(id)); }
-            function fieldVal(s) { return /\s/.test(s) ? '"' + s.replace(/"/g, '') + '"' : s; }
-            // Baukasten-Textfelder -> Query (Anhang-Token haengt der Aufrufer separat an).
-            function build() {
+            function scope() { return scopeSel ? scopeSel.value : ''; }
+            // Nackte (feldlose) Kombination aus den vier Baukasten-Feldern.
+            function innerCompose() {
                 var p = [];
-                if (val('adv_all')) p.push(val('adv_all'));
-                if (toks('adv_any').length) p.push(toks('adv_any').join(' OR '));
+                toks('adv_all').forEach(function (w) { p.push(w); });
+                var anyT = toks('adv_any'); if (anyT.length) p.push(anyT.join(' OR '));
                 toks('adv_none').forEach(function (w) { p.push('-' + w.replace(/^-+/, '')); });
                 toks('adv_sub').forEach(function (w) { if (w.charAt(0) !== '"') p.push('*' + w.replace(/\*/g, '') + '*'); });
-                if (val('adv_subject')) p.push('subject:' + fieldVal(val('adv_subject')));
-                if (val('adv_from')) p.push('from:' + fieldVal(val('adv_from')));
-                if (val('adv_to')) p.push('to:' + fieldVal(val('adv_to')));
                 return p.join(' ');
+            }
+            // Bei gewaehltem Feld wird die Kombination als feld:(...) gescoped.
+            function build() {
+                var inner = innerCompose();
+                if (!inner) return '';
+                var sc = scope();
+                return sc ? sc + ':(' + inner + ')' : inner;
             }
             function attachToken() { return attachSel && attachSel.value === 'yes' ? 'has:attachment' : (attachSel && attachSel.value === 'no' ? '-has:attachment' : ''); }
             function stripAttach(q) { return q.replace(/(^|\s)-?has:\S+/gi, ' ').replace(/\s{2,}/g, ' ').trim(); }
             function withAttach(base) { var t = attachToken(); return (base + (t ? ' ' + t : '')).trim(); }
             function setField(id, value) { var e = document.getElementById(id); if (e) e.value = value; }
             function isOr(t) { return t === '|' || /^(or|oder)$/i.test(t); }
-            function parseIntoBuilder(query) {
-                var all = [], any = [], none = [], subs = [], f = { subject: '', from: '', to: '' };
-                var tokens = query.match(/\w+:"[^"]*"|[-!]?"[^"]*"|\S+/g) || [];
+            // Zerlegt eine "nackte" Kombination in die vier Baukasten-Felder.
+            function fillBlock(inner) {
+                var all = [], any = [], none = [], subs = [];
+                var tokens = inner.match(/[-!]?\w+:"[^"]*"|[-!]?\w+:\S+|[-!]?"[^"]*"|\S+/g) || [];
                 for (var i = 0; i < tokens.length; i++) {
                     var t = tokens[i];
                     if (isOr(t)) continue;
-                    if (/^-?has:/i.test(t)) continue; // Anhang -> ueber die Auswahl, nicht in die Textfelder
-                    var fm = t.match(/^(subject|from|to):(.+)$/i);
-                    if (fm) { f[fm[1].toLowerCase()] = fm[2].replace(/^"|"$/g, ''); continue; }
                     var neg = false;
                     if (t.charAt(0) === '-' || t.charAt(0) === '!') { neg = true; t = t.substring(1); }
                     if (t.length === 0) continue;
-                    if (neg) { none.push(t); continue; } // Wort oder "Phrase" (mit Anfuehrungszeichen)
+                    if (neg) { none.push(t); continue; }
                     if (t.length > 2 && t.charAt(0) === '*' && t.charAt(t.length - 1) === '*') { subs.push(t.slice(1, -1)); continue; }
-                    if (t.charAt(0) === '"' && t.charAt(t.length - 1) === '"') { all.push(t); continue; } // Phrase -> "Alle Begriffe"
+                    if (t.charAt(0) === '"' && t.charAt(t.length - 1) === '"') { all.push(t); continue; }
                     var prevOr = i > 0 && isOr(tokens[i - 1]);
                     var nextOr = i < tokens.length - 1 && isOr(tokens[i + 1]);
                     (prevOr || nextOr ? any : all).push(t);
@@ -1154,27 +1159,34 @@
                 setField('adv_any', any.join(' '));
                 setField('adv_none', none.join(' '));
                 setField('adv_sub', subs.join(' '));
-                setField('adv_subject', f.subject);
-                setField('adv_from', f.from);
-                setField('adv_to', f.to);
+            }
+            // Suchfeld -> Baukasten: Anhang abtrennen, ganze feld:(...)-Gruppe erkennen, Rest in den Block.
+            function parseIntoBuilder(query) {
+                var q = stripAttach(query).trim();
+                var m = q.match(/^(subject|from|to|body):\(([\s\S]*)\)$/i);
+                var sc = '', inner = q;
+                if (m) { sc = m[1].toLowerCase(); inner = m[2]; }
+                if (scopeSel) scopeSel.value = VALIDFIELDS[sc] ? sc : '';
+                fillBlock(inner);
+                syncSubVisibility();
             }
             function attachFromBox() {
                 if (!attachSel || !box) return;
                 var q = box.value;
                 attachSel.value = /(^|\s)-has:\S+/i.test(q) ? 'no' : (/(^|\s)has:\S+/i.test(q) ? 'yes' : '');
             }
+            // Teilstring ist im Feld-Scope redundant (Feld-Treffer sind ohnehin Teilstring) -> ausblenden.
+            function syncSubVisibility() { if (subCol) subCol.style.display = scope() ? 'none' : ''; }
 
-            // Baukasten -> Suchfeld (Textfelder), Anhang-Token aus der Auswahl anhaengen.
-            function boxFromBuilder() { if (box) box.value = withAttach(build()); }
+            // Baukasten -> Suchfeld (+ Anhang-Token).
+            function boxFromBuilder() { if (box) box.value = withAttach(build()); syncSubVisibility(); }
             document.querySelectorAll('.adv-field').forEach(function (f) {
                 f.addEventListener('change', boxFromBuilder);
                 f.addEventListener('keydown', function (e) { if (e.key === 'Enter') boxFromBuilder(); });
             });
-            // Anhang-Auswahl -> Suchfeld: bestehendes has-Token ersetzen, Rest erhalten.
             if (attachSel) attachSel.addEventListener('change', function () {
                 if (box) box.value = withAttach(stripAttach(box.value));
             });
-            // Suchfeld -> Baukasten + Anhang-Auswahl.
             function builderFromBox() { if (box) { parseIntoBuilder(box.value.trim()); attachFromBox(); } }
             if (box) {
                 box.addEventListener('change', builderFromBox);
@@ -1187,6 +1199,7 @@
                 if (box && !box.value.trim()) { var c = withAttach(build()); if (c) box.value = c; }
             });
             attachFromBox();
+            syncSubVisibility();
         })();
     });
 </script>

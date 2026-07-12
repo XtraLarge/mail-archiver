@@ -461,6 +461,7 @@ namespace MailArchiver.Services.Core
         }
 
         private const int MinPrefixLength = 3;
+        private const int MaxClauseGroups = 256;
         private const string FtsExpr = @"to_tsvector('simple', COALESCE(""Subject"", '') || ' ' || COALESCE(""Body"", '') || ' ' || COALESCE(""From"", '') || ' ' || COALESCE(""To"", '') || ' ' || COALESCE(""Cc"", '') || ' ' || COALESCE(""Bcc"", ''))";
         private const string LowerConcatExpr = @"lower(COALESCE(""Subject"", '') || ' ' || COALESCE(""Body"", '') || ' ' || COALESCE(""From"", '') || ' ' || COALESCE(""To"", '') || ' ' || COALESCE(""Cc"", '') || ' ' || COALESCE(""Bcc"", ''))";
 
@@ -469,90 +470,182 @@ namespace MailArchiver.Services.Core
         // subject:/body:/from:/to: ; *term* substring (pg_trgm). Fields and phrases are positive-only.
         internal static List<List<SearchClause>> ParseSearchClauses(string searchTerm)
         {
-            var groups = new List<List<SearchClause>>();
             if (string.IsNullOrWhiteSpace(searchTerm))
-                return groups;
+                return new List<List<SearchClause>>();
 
             var validFields = new HashSet<string> { "subject", "body", "from", "to" };
+
+            // Query = AND of OR-runs. Each item (word / phrase / field:value / field:(group)) yields a
+            // CNF fragment (List<List<SearchClause>>). Items combine left-to-right by implicit AND; OR
+            // merges neighbours. field:(...) groups parse recursively and re-map every clause onto that
+            // field; OR between groups is resolved by CNF distribution, bounded by MaxClauseGroups.
+            var regex = new Regex(
+                @"(?<gneg>[-!]?)(?<gfield>\w+):\((?<ginner>[^)]*)\)" +
+                @"|(?<pneg>[-!]?)""(?<phrase>[^""]*)""" +
+                @"|(?<fneg>[-!]?)(?<field>\w+):(""(?<fq>[^""]*)""|(?<fu>\S+))" +
+                @"|(?<tok>\S+)",
+                RegexOptions.None);
+
+            List<List<SearchClause>> result = null; // accumulated AND of completed OR-runs
+            List<List<SearchClause>> run = null;     // current OR-run
             bool pendingOr = false;
-            void Add(SearchClause c)
+
+            foreach (Match match in regex.Matches(searchTerm))
             {
-                if (pendingOr && groups.Count > 0)
+                if (match.Groups["tok"].Success)
                 {
-                    groups[groups.Count - 1].Add(c);
+                    var tv = match.Groups["tok"].Value.Trim();
+                    if (tv.Equals("OR", StringComparison.OrdinalIgnoreCase) ||
+                        tv.Equals("ODER", StringComparison.OrdinalIgnoreCase) || tv == "|")
+                    {
+                        if (run != null) pendingOr = true;
+                        continue;
+                    }
+                }
+
+                var frag = ParseItemToCnf(match, validFields);
+                if (frag == null || frag.Count == 0)
+                {
+                    pendingOr = false; // a dropped item cannot serve as an OR operand
+                    continue;
+                }
+
+                if (pendingOr && run != null)
+                {
+                    run = OrCnf(run, frag);
                     pendingOr = false;
                 }
                 else
                 {
-                    groups.Add(new List<SearchClause> { c });
+                    if (run != null)
+                        result = result == null ? run : AndCnf(result, run);
+                    run = frag;
                 }
             }
+            if (run != null)
+                result = result == null ? run : AndCnf(result, run);
 
-            var regex = new Regex(@"(?<pneg>[-!]?)""(?<phrase>[^""]*)""|(?<field>\w+):(""(?<fq>[^""]*)""|(?<fu>\S+))|(?<tok>\S+)", RegexOptions.None);
-            foreach (Match match in regex.Matches(searchTerm))
+            return result ?? new List<List<SearchClause>>();
+        }
+
+        // Parses one regex match into a CNF fragment (null = nothing to add).
+        private static List<List<SearchClause>> ParseItemToCnf(Match match, HashSet<string> validFields)
+        {
+            if (match.Groups["gfield"].Success)
             {
-                if (match.Groups["phrase"].Success)
-                {
-                    var phrase = match.Groups["phrase"].Value.Trim();
-                    if (phrase.Length > 0)
-                        Add(new SearchClause { Kind = ClauseKind.Phrase, Text = phrase, Negated = match.Groups["pneg"].Value.Length > 0 });
-                }
-                else if (match.Groups["field"].Success)
-                {
-                    var field = match.Groups["field"].Value.ToLower().Trim();
-                    var rawFieldVal = match.Groups["fq"].Success ? match.Groups["fq"].Value : match.Groups["fu"].Value;
-                    if (field == "has")
-                    {
-                        if (IsAttachmentKeyword(rawFieldVal))
-                            Add(new SearchClause { Kind = ClauseKind.Attachment });
-                    }
-                    else
-                    {
-                        var column = GetColumnForField(field);
-                        if (validFields.Contains(field) && column != null)
-                        {
-                            var term = Regex.Replace(rawFieldVal.Trim(), @"[&|!():\*]", "", RegexOptions.None);
-                            if (term.Length > 0)
-                                Add(new SearchClause { Kind = ClauseKind.Field, Text = term, Column = column });
-                        }
-                    }
-                }
-                else if (match.Groups["tok"].Success)
-                {
-                    var token = match.Groups["tok"].Value.Trim();
-                    if (token.Length == 0)
-                        continue;
-                    if (token.Equals("OR", StringComparison.OrdinalIgnoreCase) ||
-                        token.Equals("ODER", StringComparison.OrdinalIgnoreCase) || token == "|")
-                    {
-                        pendingOr = groups.Count > 0;
-                        continue;
-                    }
-                    bool negated = false;
-                    if ((token.StartsWith("-") || token.StartsWith("!")) && token.Length > 1)
-                    {
-                        negated = true;
-                        token = token.Substring(1);
-                    }
-                    if (negated && token.StartsWith("has:", StringComparison.OrdinalIgnoreCase))
-                    {
-                        if (IsAttachmentKeyword(token.Substring(4)))
-                            Add(new SearchClause { Kind = ClauseKind.Attachment, Negated = true });
-                        continue;
-                    }
-                    if (token.Length > 2 && token.StartsWith("*") && token.EndsWith("*"))
-                    {
-                        var inner = token.Substring(1, token.Length - 2); // LIKE metacharacters are escaped at build time, not stripped
-                        if (inner.Length > 0)
-                            Add(new SearchClause { Kind = ClauseKind.Substring, Text = inner, Negated = negated });
-                        continue;
-                    }
-                    var sanitized = Regex.Replace(token, @"[&|!():\*<>'""]", "", RegexOptions.None);
-                    if (sanitized.Length > 0)
-                        Add(new SearchClause { Kind = ClauseKind.Word, Text = sanitized, Negated = negated });
-                }
+                var field = match.Groups["gfield"].Value.ToLower().Trim();
+                var column = GetColumnForField(field);
+                if (!validFields.Contains(field) || column == null)
+                    return null;
+                var inner = ParseSearchClauses(match.Groups["ginner"].Value);
+                RemapGroupToField(inner, column);
+                if (match.Groups["gneg"].Value.Length > 0)
+                    inner = NegateCnf(inner);
+                return inner.Count > 0 ? inner : null;
             }
-            return groups;
+            if (match.Groups["phrase"].Success)
+            {
+                var phrase = match.Groups["phrase"].Value.Trim();
+                if (phrase.Length == 0) return null;
+                return One(new SearchClause { Kind = ClauseKind.Phrase, Text = phrase, Negated = match.Groups["pneg"].Value.Length > 0 });
+            }
+            if (match.Groups["field"].Success)
+            {
+                var field = match.Groups["field"].Value.ToLower().Trim();
+                var negated = match.Groups["fneg"].Value.Length > 0;
+                var rawFieldVal = match.Groups["fq"].Success ? match.Groups["fq"].Value : match.Groups["fu"].Value;
+                if (field == "has")
+                {
+                    if (IsAttachmentKeyword(rawFieldVal))
+                        return One(new SearchClause { Kind = ClauseKind.Attachment, Negated = negated });
+                    return null;
+                }
+                var column = GetColumnForField(field);
+                if (validFields.Contains(field) && column != null)
+                {
+                    var term = Regex.Replace(rawFieldVal.Trim(), @"[&|!():\*]", "", RegexOptions.None);
+                    if (term.Length > 0)
+                        return One(new SearchClause { Kind = ClauseKind.Field, Text = term, Column = column, Negated = negated });
+                }
+                return null;
+            }
+            if (match.Groups["tok"].Success)
+            {
+                var token = match.Groups["tok"].Value.Trim();
+                if (token.Length == 0) return null;
+                bool negated = false;
+                if ((token.StartsWith("-") || token.StartsWith("!")) && token.Length > 1)
+                {
+                    negated = true;
+                    token = token.Substring(1);
+                }
+                if (token.Length > 2 && token.StartsWith("*") && token.EndsWith("*"))
+                {
+                    var inner = token.Substring(1, token.Length - 2); // LIKE metacharacters escaped at build time
+                    if (inner.Length > 0)
+                        return One(new SearchClause { Kind = ClauseKind.Substring, Text = inner, Negated = negated });
+                    return null;
+                }
+                var sanitized = Regex.Replace(token, @"[&|!():\*<>'""]", "", RegexOptions.None);
+                if (sanitized.Length > 0)
+                    return One(new SearchClause { Kind = ClauseKind.Word, Text = sanitized, Negated = negated });
+                return null;
+            }
+            return null;
+        }
+
+        private static List<List<SearchClause>> One(SearchClause c)
+            => new List<List<SearchClause>> { new List<SearchClause> { c } };
+
+        // Re-map every clause of a parsed group onto one field (POSITION-substring semantics).
+        private static void RemapGroupToField(List<List<SearchClause>> cnf, string column)
+        {
+            for (int g = 0; g < cnf.Count; g++)
+                for (int i = 0; i < cnf[g].Count; i++)
+                {
+                    var c = cnf[g][i];
+                    cnf[g][i] = c.Kind == ClauseKind.Attachment
+                        ? c
+                        : new SearchClause { Kind = ClauseKind.Field, Text = c.Text, Column = column, Negated = c.Negated };
+                }
+        }
+
+        // AND of two CNFs = concatenation of their groups (bounded).
+        private static List<List<SearchClause>> AndCnf(List<List<SearchClause>> a, List<List<SearchClause>> b)
+        {
+            var r = new List<List<SearchClause>>(a);
+            r.AddRange(b);
+            if (r.Count > MaxClauseGroups) r = r.GetRange(0, MaxClauseGroups);
+            return r;
+        }
+
+        // OR of two CNFs = distribute: each pair of groups merges its clause lists (bounded).
+        private static List<List<SearchClause>> OrCnf(List<List<SearchClause>> a, List<List<SearchClause>> b)
+        {
+            var r = new List<List<SearchClause>>();
+            foreach (var ga in a)
+                foreach (var gb in b)
+                {
+                    var merged = new List<SearchClause>(ga);
+                    merged.AddRange(gb);
+                    r.Add(merged);
+                    if (r.Count >= MaxClauseGroups) return r;
+                }
+            return r;
+        }
+
+        // De Morgan: NOT(AND_i OR_j c) = OR_i (AND_j !c), re-distributed back to CNF.
+        private static List<List<SearchClause>> NegateCnf(List<List<SearchClause>> cnf)
+        {
+            List<List<SearchClause>> acc = null;
+            foreach (var group in cnf)
+            {
+                var negGroup = new List<List<SearchClause>>();
+                foreach (var c in group)
+                    negGroup.Add(new List<SearchClause> { new SearchClause { Kind = c.Kind, Text = c.Text, Column = c.Column, Negated = !c.Negated } });
+                acc = acc == null ? negGroup : OrCnf(acc, negGroup);
+            }
+            return acc ?? new List<List<SearchClause>>();
         }
 
         // Builds a GIN-indexable phrase tsquery ("w1 <-> w2 ...", prefix-matched) so exact-phrase

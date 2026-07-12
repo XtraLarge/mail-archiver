@@ -3134,4 +3134,16 @@
   <data name="AdvBuilderQuoteHint" xml:space="preserve">
     <value>Genauer Ausdruck: in Anführungszeichen setzen, z. B. "offene rechnung" - auch zum Ausschließen: -"offene rechnung".</value>
   </data>
+  <data name="AdvScopeLabel" xml:space="preserve">
+    <value>Suchen in</value>
+  </data>
+  <data name="AdvScopeAll" xml:space="preserve">
+    <value>Alle Felder</value>
+  </data>
+  <data name="AdvScopeBody" xml:space="preserve">
+    <value>Text</value>
+  </data>
+  <data name="AdvBuilderGroupHint" xml:space="preserve">
+    <value>Ganze Kombination auf ein Feld: „Suchen in" oben – oder direkt feld:(…), z. B. subject:(rechnung -storno).</value>
+  </data>
 </root>

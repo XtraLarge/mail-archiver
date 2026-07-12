@@ -127,6 +127,83 @@ public class SearchTermParserTests
         Assert.Contains(groups.SelectMany(g => g), c => c.Kind == EmailCoreService.ClauseKind.Word && c.Text == "rechnung");
     }
 
+    // ---- field:(...) groups (Gmail-style), full boolean logic ----
+    [Fact]
+    public void Field_group_terms_are_anded()
+    {
+        var groups = Parse("from:(meier schulze)");
+        Assert.Equal(2, groups.Count);
+        Assert.All(groups, g => Assert.Equal("From", Assert.Single(g).Column));
+        Assert.All(groups, g => Assert.Equal(EmailCoreService.ClauseKind.Field, Assert.Single(g).Kind));
+        Assert.Contains(groups.SelectMany(x => x), c => c.Text == "meier");
+        Assert.Contains(groups.SelectMany(x => x), c => c.Text == "schulze");
+    }
+
+    [Fact]
+    public void Field_group_phrase_is_one_field_clause()
+    {
+        var c = Assert.Single(Assert.Single(Parse("from:(\"meier schulze\")")));
+        Assert.Equal(EmailCoreService.ClauseKind.Field, c.Kind);
+        Assert.Equal("From", c.Column);
+        Assert.Equal("meier schulze", c.Text);
+    }
+
+    [Fact]
+    public void Field_group_or_is_one_group()
+    {
+        var g = Assert.Single(Parse("from:(meier OR schulze)"));
+        Assert.Equal(2, g.Count);
+        Assert.All(g, c => Assert.Equal("From", c.Column));
+    }
+
+    [Fact]
+    public void Field_group_with_exclude()
+    {
+        var flat = Parse("subject:(rechnung -storno)").SelectMany(x => x);
+        Assert.Contains(flat, c => c.Column == "Subject" && c.Text == "rechnung" && !c.Negated);
+        Assert.Contains(flat, c => c.Column == "Subject" && c.Text == "storno" && c.Negated);
+    }
+
+    [Fact]
+    public void Or_between_two_single_term_field_groups()
+    {
+        var g = Assert.Single(Parse("from:(meier) OR to:(schulze)"));
+        Assert.Equal(2, g.Count);
+        Assert.Contains(g, c => c.Column == "From" && c.Text == "meier");
+        Assert.Contains(g, c => c.Column == "To" && c.Text == "schulze");
+    }
+
+    [Fact]
+    public void Or_between_group_and_term_distributes()
+    {
+        // (from:a AND from:b) OR to:c  ==  (from:a OR to:c) AND (from:b OR to:c)
+        var groups = Parse("from:(a b) OR to:(c)");
+        Assert.Equal(2, groups.Count);
+        Assert.All(groups, g => Assert.Contains(g, c => c.Column == "To" && c.Text == "c"));
+        Assert.Contains(groups, g => g.Any(c => c.Column == "From" && c.Text == "a"));
+        Assert.Contains(groups, g => g.Any(c => c.Column == "From" && c.Text == "b"));
+    }
+
+    [Fact]
+    public void Negated_field_group_demorgan()
+    {
+        // -from:(a b) == NOT(from:a AND from:b) == (NOT from:a OR NOT from:b): one group, both negated
+        var g = Assert.Single(Parse("-from:(a b)"));
+        Assert.Equal(2, g.Count);
+        Assert.All(g, c => Assert.True(c.Negated && c.Column == "From"));
+    }
+
+    [Fact]
+    public void Invalid_field_group_ignored() => Assert.Empty(Parse("bogus:(x y)"));
+
+    [Fact]
+    public void Field_group_mixes_with_explicit_prefix()
+    {
+        var flat = Parse("from:(rechnung) subject:eilig").SelectMany(x => x);
+        Assert.Contains(flat, c => c.Column == "From" && c.Text == "rechnung");
+        Assert.Contains(flat, c => c.Column == "Subject" && c.Text == "eilig");
+    }
+
     [Fact]
     public void Field_clause()
     {

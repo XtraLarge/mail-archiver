@@ -3120,4 +3120,16 @@
   <data name="AdvBuilderQuoteHint" xml:space="preserve">
     <value>Exact phrase: put it in quotes, e.g. "open invoice" - also to exclude: -"open invoice".</value>
   </data>
+  <data name="AdvScopeLabel" xml:space="preserve">
+    <value>Search in</value>
+  </data>
+  <data name="AdvScopeAll" xml:space="preserve">
+    <value>All fields</value>
+  </data>
+  <data name="AdvScopeBody" xml:space="preserve">
+    <value>Body</value>
+  </data>
+  <data name="AdvBuilderGroupHint" xml:space="preserve">
+    <value>Whole combination on one field: "Search in" above – or directly field:(…), e.g. subject:(rechnung -storno).</value>
+  </data>
 </root>
