@@ -117,6 +117,7 @@
                                     </div>
                                     <hr class="my-2">
                                     <div class="small text-muted">
+                                        @Localizer["AdvancedSearchInfo0"]<br>
                                         @Localizer["AdvancedSearchInfo1"]<br>
                                         @Localizer["AdvancedSearchInfo2"]<br>
                                         @Localizer["AdvancedSearchInfo3"]<br>
@@ -1136,6 +1137,43 @@
                     var composed = build();
                     if (composed) box.value = composed;
                 }
+            });
+
+            // Reverse: when the advanced search is expanded, split the search box back into the
+            // builder fields (mirrors the forward composition) so the two stay in sync.
+            function setField(id, value) { var e = document.getElementById(id); if (e) e.value = value; }
+            function isOr(t) { return t === '|' || /^(or|oder)$/i.test(t); }
+            function parseIntoBuilder(query) {
+                var all = [], any = [], none = [], subs = [], phrase = '', f = { subject: '', from: '', to: '' };
+                var tokens = query.match(/(?:\w+:)?"[^"]*"|\S+/g) || [];
+                for (var i = 0; i < tokens.length; i++) {
+                    var t = tokens[i];
+                    if (isOr(t)) continue;
+                    var fm = t.match(/^(subject|from|to):(.+)$/i);
+                    if (fm) { f[fm[1].toLowerCase()] = fm[2].replace(/^"|"$/g, ''); continue; }
+                    if (t.charAt(0) === '"' && t.charAt(t.length - 1) === '"') { phrase = t.slice(1, -1); continue; }
+                    var neg = false;
+                    if (t.charAt(0) === '-' || t.charAt(0) === '!') { neg = true; t = t.substring(1); }
+                    if (t.length > 2 && t.charAt(0) === '*' && t.charAt(t.length - 1) === '*') { subs.push(t.slice(1, -1)); continue; }
+                    if (t.length === 0) continue;
+                    if (neg) { none.push(t); continue; }
+                    var prevOr = i > 0 && isOr(tokens[i - 1]);
+                    var nextOr = i < tokens.length - 1 && isOr(tokens[i + 1]);
+                    (prevOr || nextOr ? any : all).push(t);
+                }
+                setField('adv_all', all.join(' '));
+                setField('adv_any', any.join(' '));
+                setField('adv_none', none.join(' '));
+                setField('adv_phrase', phrase);
+                setField('adv_sub', subs.join(' '));
+                setField('adv_subject', f.subject);
+                setField('adv_from', f.from);
+                setField('adv_to', f.to);
+            }
+            var advCollapse = document.getElementById('advSearchHelp');
+            if (advCollapse) advCollapse.addEventListener('show.bs.collapse', function () {
+                if (box && box.value.trim()) parseIntoBuilder(box.value.trim());
+                refresh();
             });
             refresh();
         })();

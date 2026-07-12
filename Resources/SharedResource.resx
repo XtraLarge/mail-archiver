@@ -1189,6 +1189,9 @@
   <data name="AdvancedSearch" xml:space="preserve">
     <value>Advanced Search</value>
   </data>
+  <data name="AdvancedSearchInfo0" xml:space="preserve">
+    <value>• Words are matched as a stem (prefix): &quot;invoice&quot; also finds &quot;invoices&quot;</value>
+  </data>
   <data name="AdvancedSearchInfo1" xml:space="preserve">
     <value>• Use quotes for exact phrases: "important meeting"</value>
   </data>
