@@ -139,6 +139,10 @@ namespace MailArchiver.Services.Core
                                 paramCounter++;
                                 if (clause.Negated) cond = $"NOT ({cond})";
                             }
+                            else if (clause.Kind == ClauseKind.Attachment)
+                            {
+                                cond = clause.Negated ? "\"HasAttachments\" = FALSE" : "\"HasAttachments\" = TRUE";
+                            }
                             else // Phrase: GIN @@ prefilter narrows rows, POSITION confirms the exact phrase.
                             {
                                 var phraseTs = BuildPhraseTsQuery(clause.Text);
@@ -156,6 +160,7 @@ namespace MailArchiver.Services.Core
                                     parameters.Add(new Npgsql.NpgsqlParameter($"@param{paramCounter}", clause.Text));
                                     paramCounter++;
                                 }
+                                if (clause.Negated) cond = $"NOT ({cond})";
                             }
                             conds.Add(cond);
                         }
@@ -391,8 +396,34 @@ namespace MailArchiver.Services.Core
             };
         }
 
+        private static bool IsAttachmentKeyword(string v)
+        {
+            if (string.IsNullOrWhiteSpace(v)) return false;
+            switch (v.Trim().ToLowerInvariant())
+            {
+                case "attachment":
+                case "attachments":
+                case "anhang":
+                case "anhänge":
+                case "anhaenge":
+                case "file":
+                case "files":
+                case "yes":
+                case "true":
+                case "1":
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
         private static System.Linq.Expressions.Expression<Func<ArchivedEmail, bool>> ClausePredicate(SearchClause c)
         {
+            if (c.Kind == ClauseKind.Attachment)
+            {
+                System.Linq.Expressions.Expression<Func<ArchivedEmail, bool>> a = e => e.HasAttachments;
+                return c.Negated ? NotPredicate(a) : a;
+            }
             var p = c.Kind == ClauseKind.Field ? FieldColumnPredicate(c.Column, c.Text) : FieldContainsPredicate(c.Text);
             return c.Negated ? NotPredicate(p) : p;
         }
@@ -419,7 +450,7 @@ namespace MailArchiver.Services.Core
         // A query is an AND of OR-groups; every operand type (word / phrase / field / substring,
         // each optionally negated) is a typed clause that can be a member of an OR-group, so
         // "from:a OR from:b", "*x* OR *y*" and mixed "invoice OR from:acme" all combine correctly.
-        internal enum ClauseKind { Word, Phrase, Field, Substring }
+        internal enum ClauseKind { Word, Phrase, Field, Substring, Attachment }
 
         internal readonly struct SearchClause
         {
@@ -457,30 +488,38 @@ namespace MailArchiver.Services.Core
                 }
             }
 
-            var regex = new Regex(@"""([^""]*)""|(\w+):(""([^""]*)""|(\S+))|(\S+)", RegexOptions.None);
+            var regex = new Regex(@"(?<pneg>[-!]?)""(?<phrase>[^""]*)""|(?<field>\w+):(""(?<fq>[^""]*)""|(?<fu>\S+))|(?<tok>\S+)", RegexOptions.None);
             foreach (Match match in regex.Matches(searchTerm))
             {
-                if (match.Groups[1].Success)
+                if (match.Groups["phrase"].Success)
                 {
-                    var phrase = match.Groups[1].Value.Trim();
+                    var phrase = match.Groups["phrase"].Value.Trim();
                     if (phrase.Length > 0)
-                        Add(new SearchClause { Kind = ClauseKind.Phrase, Text = phrase });
+                        Add(new SearchClause { Kind = ClauseKind.Phrase, Text = phrase, Negated = match.Groups["pneg"].Value.Length > 0 });
                 }
-                else if (match.Groups[2].Success)
+                else if (match.Groups["field"].Success)
                 {
-                    var field = match.Groups[2].Value.ToLower().Trim();
-                    var column = GetColumnForField(field);
-                    if (validFields.Contains(field) && column != null)
+                    var field = match.Groups["field"].Value.ToLower().Trim();
+                    var rawFieldVal = match.Groups["fq"].Success ? match.Groups["fq"].Value : match.Groups["fu"].Value;
+                    if (field == "has")
                     {
-                        var raw = match.Groups[4].Success ? match.Groups[4].Value : match.Groups[5].Value;
-                        var term = Regex.Replace(raw.Trim(), @"[&|!():\*]", "", RegexOptions.None);
-                        if (term.Length > 0)
-                            Add(new SearchClause { Kind = ClauseKind.Field, Text = term, Column = column });
+                        if (IsAttachmentKeyword(rawFieldVal))
+                            Add(new SearchClause { Kind = ClauseKind.Attachment });
+                    }
+                    else
+                    {
+                        var column = GetColumnForField(field);
+                        if (validFields.Contains(field) && column != null)
+                        {
+                            var term = Regex.Replace(rawFieldVal.Trim(), @"[&|!():\*]", "", RegexOptions.None);
+                            if (term.Length > 0)
+                                Add(new SearchClause { Kind = ClauseKind.Field, Text = term, Column = column });
+                        }
                     }
                 }
-                else if (match.Groups[6].Success)
+                else if (match.Groups["tok"].Success)
                 {
-                    var token = match.Groups[6].Value.Trim();
+                    var token = match.Groups["tok"].Value.Trim();
                     if (token.Length == 0)
                         continue;
                     if (token.Equals("OR", StringComparison.OrdinalIgnoreCase) ||
@@ -494,6 +533,12 @@ namespace MailArchiver.Services.Core
                     {
                         negated = true;
                         token = token.Substring(1);
+                    }
+                    if (negated && token.StartsWith("has:", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (IsAttachmentKeyword(token.Substring(4)))
+                            Add(new SearchClause { Kind = ClauseKind.Attachment, Negated = true });
+                        continue;
                     }
                     if (token.Length > 2 && token.StartsWith("*") && token.EndsWith("*"))
                     {

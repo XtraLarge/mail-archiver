@@ -47,7 +47,14 @@
                 <div class="row">
                     <div class="col-12 col-md-6 col-lg-3 mb-3">
                         <label asp-for="SearchTerm" class="form-label">@Localizer["SearchTerm"]</label>
-                        <input asp-for="SearchTerm" class="form-control form-control-sm" placeholder="@Localizer["SubjectSender"]" />
+                        <div class="input-group input-group-sm">
+                            <input asp-for="SearchTerm" class="form-control form-control-sm" placeholder="@Localizer["SubjectSender"]" />
+                            <select id="adv_attach" class="form-select form-select-sm flex-grow-0 w-auto" title="@Localizer["AdvAttachTitle"]" aria-label="@Localizer["AdvAttachTitle"]">
+                                <option value="">@Localizer["AdvAttachAny"]</option>
+                                <option value="yes">@Localizer["AdvAttachYes"]</option>
+                                <option value="no">@Localizer["AdvAttachNo"]</option>
+                            </select>
+                        </div>
                         <div class="form-text small text-muted">
                             <a class="text-decoration-none" data-bs-toggle="collapse" href="#advSearchHelp" role="button" aria-expanded="false" aria-controls="advSearchHelp">
                                 <i class="bi bi-info-circle me-1"></i><strong>@Localizer["AdvancedSearch"]</strong> <i class="bi bi-chevron-down"></i>
@@ -91,7 +98,7 @@
                                         <div class="col-12"><hr class="my-1 opacity-25"></div>
                                         <div class="col-12 col-lg-6">
                                             <label class="form-label mb-0 small" for="adv_all">@Localizer["AdvBuilderAll"]</label>
-                                            <input type="text" class="form-control form-control-sm adv-field" id="adv_all" autocomplete="off" placeholder="rechnung 2024">
+                                            <input type="text" class="form-control form-control-sm adv-field" id="adv_all" autocomplete="off" placeholder="rechnung &quot;offene posten&quot;">
                                         </div>
                                         <div class="col-12 col-lg-6">
                                             <label class="form-label mb-0 small" for="adv_any">@Localizer["AdvBuilderAny"]</label>
@@ -99,11 +106,7 @@
                                         </div>
                                         <div class="col-12 col-lg-6">
                                             <label class="form-label mb-0 small" for="adv_none">@Localizer["AdvBuilderNone"]</label>
-                                            <input type="text" class="form-control form-control-sm adv-field" id="adv_none" autocomplete="off" placeholder="mahnung werbung">
-                                        </div>
-                                        <div class="col-12 col-lg-6">
-                                            <label class="form-label mb-0 small" for="adv_phrase">@Localizer["AdvBuilderPhrase"]</label>
-                                            <input type="text" class="form-control form-control-sm adv-field" id="adv_phrase" autocomplete="off" placeholder="wichtiges meeting">
+                                            <input type="text" class="form-control form-control-sm adv-field" id="adv_none" autocomplete="off" placeholder="werbung &quot;bereits bezahlt&quot;">
                                         </div>
                                         <div class="col-12 col-lg-6">
                                             <label class="form-label mb-0 small" for="adv_sub">@Localizer["AdvBuilderSubstring"]</label>
@@ -117,7 +120,8 @@
                                         @Localizer["AdvancedSearchInfo2"]<br>
                                         @Localizer["AdvancedSearchInfo3"]<br>
                                         @Localizer["AdvancedSearchInfo4"]<br>
-                                        @Localizer["AdvancedSearchInfo5"]
+                                        @Localizer["AdvancedSearchInfo5"]<br>
+                                        @Localizer["AdvBuilderQuoteHint"]
                                     </div>
                                 </div>
                             </div>
@@ -1101,41 +1105,47 @@
             <text>initializeSelectionHandlers();</text>
         }
 
-        // Advanced-Suche: Baukasten und Suchfeld halten sich gegenseitig aktuell.
-        // Bidirektional bei Enter oder Verlassen eines Feldes (change/Enter) — kein Read-only-Modus.
+        // Advanced-Suche: Baukasten, Suchfeld und Anhang-Auswahl halten sich gegenseitig aktuell.
+        // Bidirektional bei Enter oder Verlassen eines Feldes (change/Enter) - kein Read-only-Modus.
         (function () {
             var box = document.getElementById('SearchTerm');
+            var attachSel = document.getElementById('adv_attach');
             function val(id) { var e = document.getElementById(id); return e ? e.value.trim() : ''; }
-            function words(id) { var s = val(id); return s ? s.split(/\s+/) : []; }
+            function tokenize(s) { return s.match(/[-!]?"[^"]*"|\S+/g) || []; }
+            function toks(id) { return tokenize(val(id)); }
             function fieldVal(s) { return /\s/.test(s) ? '"' + s.replace(/"/g, '') + '"' : s; }
+            // Baukasten-Textfelder -> Query (Anhang-Token haengt der Aufrufer separat an).
             function build() {
                 var p = [];
                 if (val('adv_all')) p.push(val('adv_all'));
-                if (words('adv_any').length) p.push(words('adv_any').join(' OR '));
-                words('adv_none').forEach(function (w) { p.push('-' + w.replace(/^-+/, '')); });
-                if (val('adv_phrase')) p.push('"' + val('adv_phrase').replace(/"/g, '') + '"');
-                words('adv_sub').forEach(function (w) { p.push('*' + w.replace(/\*/g, '') + '*'); });
+                if (toks('adv_any').length) p.push(toks('adv_any').join(' OR '));
+                toks('adv_none').forEach(function (w) { p.push('-' + w.replace(/^-+/, '')); });
+                toks('adv_sub').forEach(function (w) { if (w.charAt(0) !== '"') p.push('*' + w.replace(/\*/g, '') + '*'); });
                 if (val('adv_subject')) p.push('subject:' + fieldVal(val('adv_subject')));
                 if (val('adv_from')) p.push('from:' + fieldVal(val('adv_from')));
                 if (val('adv_to')) p.push('to:' + fieldVal(val('adv_to')));
                 return p.join(' ');
             }
+            function attachToken() { return attachSel && attachSel.value === 'yes' ? 'has:attachment' : (attachSel && attachSel.value === 'no' ? '-has:attachment' : ''); }
+            function stripAttach(q) { return q.replace(/(^|\s)-?has:\S+/gi, ' ').replace(/\s{2,}/g, ' ').trim(); }
+            function withAttach(base) { var t = attachToken(); return (base + (t ? ' ' + t : '')).trim(); }
             function setField(id, value) { var e = document.getElementById(id); if (e) e.value = value; }
             function isOr(t) { return t === '|' || /^(or|oder)$/i.test(t); }
             function parseIntoBuilder(query) {
-                var all = [], any = [], none = [], subs = [], phrase = '', f = { subject: '', from: '', to: '' };
-                var tokens = query.match(/(?:\w+:)?"[^"]*"|\S+/g) || [];
+                var all = [], any = [], none = [], subs = [], f = { subject: '', from: '', to: '' };
+                var tokens = query.match(/\w+:"[^"]*"|[-!]?"[^"]*"|\S+/g) || [];
                 for (var i = 0; i < tokens.length; i++) {
                     var t = tokens[i];
                     if (isOr(t)) continue;
+                    if (/^-?has:/i.test(t)) continue; // Anhang -> ueber die Auswahl, nicht in die Textfelder
                     var fm = t.match(/^(subject|from|to):(.+)$/i);
                     if (fm) { f[fm[1].toLowerCase()] = fm[2].replace(/^"|"$/g, ''); continue; }
-                    if (t.charAt(0) === '"' && t.charAt(t.length - 1) === '"') { phrase = t.slice(1, -1); continue; }
                     var neg = false;
                     if (t.charAt(0) === '-' || t.charAt(0) === '!') { neg = true; t = t.substring(1); }
-                    if (t.length > 2 && t.charAt(0) === '*' && t.charAt(t.length - 1) === '*') { subs.push(t.slice(1, -1)); continue; }
                     if (t.length === 0) continue;
-                    if (neg) { none.push(t); continue; }
+                    if (neg) { none.push(t); continue; } // Wort oder "Phrase" (mit Anfuehrungszeichen)
+                    if (t.length > 2 && t.charAt(0) === '*' && t.charAt(t.length - 1) === '*') { subs.push(t.slice(1, -1)); continue; }
+                    if (t.charAt(0) === '"' && t.charAt(t.length - 1) === '"') { all.push(t); continue; } // Phrase -> "Alle Begriffe"
                     var prevOr = i > 0 && isOr(tokens[i - 1]);
                     var nextOr = i < tokens.length - 1 && isOr(tokens[i + 1]);
                     (prevOr || nextOr ? any : all).push(t);
@@ -1143,33 +1153,40 @@
                 setField('adv_all', all.join(' '));
                 setField('adv_any', any.join(' '));
                 setField('adv_none', none.join(' '));
-                setField('adv_phrase', phrase);
                 setField('adv_sub', subs.join(' '));
                 setField('adv_subject', f.subject);
                 setField('adv_from', f.from);
                 setField('adv_to', f.to);
             }
+            function attachFromBox() {
+                if (!attachSel || !box) return;
+                var q = box.value;
+                attachSel.value = /(^|\s)-has:\S+/i.test(q) ? 'no' : (/(^|\s)has:\S+/i.test(q) ? 'yes' : '');
+            }
 
-            // Builder -> Suchfeld: beim Verlassen (change) oder Enter das Suchfeld neu zusammensetzen.
-            function boxFromBuilder() { if (box) box.value = build(); }
+            // Baukasten -> Suchfeld (Textfelder), Anhang-Token aus der Auswahl anhaengen.
+            function boxFromBuilder() { if (box) box.value = withAttach(build()); }
             document.querySelectorAll('.adv-field').forEach(function (f) {
                 f.addEventListener('change', boxFromBuilder);
                 f.addEventListener('keydown', function (e) { if (e.key === 'Enter') boxFromBuilder(); });
             });
-            // Suchfeld -> Builder: beim Verlassen (change) oder Enter das Suchfeld in die Felder zerlegen.
-            function builderFromBox() { if (box) parseIntoBuilder(box.value.trim()); }
+            // Anhang-Auswahl -> Suchfeld: bestehendes has-Token ersetzen, Rest erhalten.
+            if (attachSel) attachSel.addEventListener('change', function () {
+                if (box) box.value = withAttach(stripAttach(box.value));
+            });
+            // Suchfeld -> Baukasten + Anhang-Auswahl.
+            function builderFromBox() { if (box) { parseIntoBuilder(box.value.trim()); attachFromBox(); } }
             if (box) {
                 box.addEventListener('change', builderFromBox);
                 box.addEventListener('keydown', function (e) { if (e.key === 'Enter') builderFromBox(); });
             }
-            // Beim Aufklappen der erweiterten Suche das aktuelle Suchfeld in den Baukasten uebernehmen.
             var advCollapse = document.getElementById('advSearchHelp');
             if (advCollapse) advCollapse.addEventListener('show.bs.collapse', builderFromBox);
-            // Sicherheitsnetz: wird ohne Verlassen abgeschickt und ist das Feld leer, aus dem Baukasten fuellen.
             var advForm = document.getElementById('searchForm');
             if (advForm) advForm.addEventListener('submit', function () {
-                if (box && !box.value.trim()) { var c = build(); if (c) box.value = c; }
+                if (box && !box.value.trim()) { var c = withAttach(build()); if (c) box.value = c; }
             });
+            attachFromBox();
         })();
     });
 </script>

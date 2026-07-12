@@ -3119,4 +3119,19 @@
   <data name="ImportAccountsHeader" xml:space="preserve">
     <value>Konten importieren</value>
   </data>
+  <data name="AdvAttachTitle" xml:space="preserve">
+    <value>Anhang</value>
+  </data>
+  <data name="AdvAttachAny" xml:space="preserve">
+    <value>Anhang egal</value>
+  </data>
+  <data name="AdvAttachYes" xml:space="preserve">
+    <value>mit Anhang</value>
+  </data>
+  <data name="AdvAttachNo" xml:space="preserve">
+    <value>ohne Anhang</value>
+  </data>
+  <data name="AdvBuilderQuoteHint" xml:space="preserve">
+    <value>Genauer Ausdruck: in Anführungszeichen setzen, z. B. "offene rechnung" - auch zum Ausschließen: -"offene rechnung".</value>
+  </data>
 </root>

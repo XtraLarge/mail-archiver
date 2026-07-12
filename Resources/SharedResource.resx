@@ -3105,4 +3105,19 @@
   <data name="ImportAccountsHeader" xml:space="preserve">
     <value>Import accounts</value>
   </data>
+  <data name="AdvAttachTitle" xml:space="preserve">
+    <value>Attachment</value>
+  </data>
+  <data name="AdvAttachAny" xml:space="preserve">
+    <value>Attachment: any</value>
+  </data>
+  <data name="AdvAttachYes" xml:space="preserve">
+    <value>with attachment</value>
+  </data>
+  <data name="AdvAttachNo" xml:space="preserve">
+    <value>without attachment</value>
+  </data>
+  <data name="AdvBuilderQuoteHint" xml:space="preserve">
+    <value>Exact phrase: put it in quotes, e.g. "open invoice" - also to exclude: -"open invoice".</value>
+  </data>
 </root>

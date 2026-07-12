@@ -62,6 +62,72 @@ public class SearchTermParserTests
     }
 
     [Fact]
+    public void Negated_phrase_clause()
+    {
+        var c = Assert.Single(Assert.Single(Parse("-\"exact phrase\"")));
+        Assert.Equal(EmailCoreService.ClauseKind.Phrase, c.Kind);
+        Assert.Equal("exact phrase", c.Text);
+        Assert.True(c.Negated);
+    }
+
+    [Fact]
+    public void Bang_negated_phrase_clause()
+        => Assert.True(Assert.Single(Assert.Single(Parse("!\"exact phrase\""))).Negated);
+
+    [Fact]
+    public void Phrase_with_leading_dash_inside_quotes_is_not_negated()
+    {
+        var c = Assert.Single(Assert.Single(Parse("\"-foo\"")));
+        Assert.Equal("-foo", c.Text);
+        Assert.False(c.Negated);
+    }
+
+    [Fact]
+    public void Included_and_excluded_phrase_are_two_groups()
+    {
+        var groups = Parse("\"offene rechnung\" -\"bereits bezahlt\"");
+        Assert.Equal(2, groups.Count);
+        var inc = Assert.Single(groups[0]);
+        Assert.Equal(EmailCoreService.ClauseKind.Phrase, inc.Kind);
+        Assert.False(inc.Negated);
+        var exc = Assert.Single(groups[1]);
+        Assert.Equal(EmailCoreService.ClauseKind.Phrase, exc.Kind);
+        Assert.True(exc.Negated);
+    }
+
+    [Fact]
+    public void Has_attachment_clause()
+    {
+        var c = Assert.Single(Assert.Single(Parse("has:attachment")));
+        Assert.Equal(EmailCoreService.ClauseKind.Attachment, c.Kind);
+        Assert.False(c.Negated);
+    }
+
+    [Fact]
+    public void Has_attachment_negated()
+    {
+        var c = Assert.Single(Assert.Single(Parse("-has:attachment")));
+        Assert.Equal(EmailCoreService.ClauseKind.Attachment, c.Kind);
+        Assert.True(c.Negated);
+    }
+
+    [Fact]
+    public void Has_attachment_german_keyword()
+        => Assert.Equal(EmailCoreService.ClauseKind.Attachment, Assert.Single(Assert.Single(Parse("has:anhang"))).Kind);
+
+    [Fact]
+    public void Has_unknown_keyword_ignored() => Assert.Empty(Parse("has:banana"));
+
+    [Fact]
+    public void Text_with_attachment_filter_two_groups()
+    {
+        var groups = Parse("rechnung has:attachment");
+        Assert.Equal(2, groups.Count);
+        Assert.Contains(groups.SelectMany(g => g), c => c.Kind == EmailCoreService.ClauseKind.Attachment);
+        Assert.Contains(groups.SelectMany(g => g), c => c.Kind == EmailCoreService.ClauseKind.Word && c.Text == "rechnung");
+    }
+
+    [Fact]
     public void Field_clause()
     {
         var c = Assert.Single(Assert.Single(Parse("subject:invoice")));
