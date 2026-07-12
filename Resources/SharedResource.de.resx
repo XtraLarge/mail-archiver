@@ -3155,4 +3155,10 @@
   <data name="AdvBuilderCaseHint" xml:space="preserve">
     <value>Groß-/Kleinschreibung wird nicht beachtet.</value>
   </data>
+  <data name="AdvConnAnd" xml:space="preserve">
+    <value>UND</value>
+  </data>
+  <data name="AdvConnOr" xml:space="preserve">
+    <value>ODER</value>
+  </data>
 </root>

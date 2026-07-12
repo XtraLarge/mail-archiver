@@ -3141,4 +3141,10 @@
   <data name="AdvBuilderCaseHint" xml:space="preserve">
     <value>Search is case-insensitive.</value>
   </data>
+  <data name="AdvConnAnd" xml:space="preserve">
+    <value>AND</value>
+  </data>
+  <data name="AdvConnOr" xml:space="preserve">
+    <value>OR</value>
+  </data>
 </root>

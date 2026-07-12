@@ -1082,9 +1082,9 @@
             <text>initializeSelectionHandlers();</text>
         }
 
-        // Advanced-Suche: Zeilen-Builder. Jede Zeile = ein Feld (Alle/Betreff/Von/An/Text) + Begriffe;
-        // Zeilen sind UND-verknuepft und komponieren als feld:(...)-Gruppen. Bidirektional mit dem
-        // Suchfeld bei Enter/Verlassen. Anhang bleibt orthogonal hinter dem Suchfeld.
+        // Advanced-Suche: Zeilen-Builder. Jede Zeile = optionaler UND/ODER-Konnektor (ausser der ersten)
+        // + Feld (Alle/Betreff/Von/An/Text) + Begriffe. Komponiert als feld:(...)-Gruppen, per Leerzeichen
+        // (UND) bzw. " OR " (ODER) verknuepft. Bidirektional mit dem Suchfeld. Anhang bleibt orthogonal.
         (function () {
             var box = document.getElementById('SearchTerm');
             var attachSel = document.getElementById('adv_attach');
@@ -1098,66 +1098,109 @@
                 { v: 'to', t: '@Localizer["AdvBuilderTo"]' },
                 { v: 'body', t: '@Localizer["AdvScopeBody"]' }
             ];
+            var CONN_OPTS = [
+                { v: 'and', t: '@Localizer["AdvConnAnd"]' },
+                { v: 'or', t: '@Localizer["AdvConnOr"]' }
+            ];
             var ROW_PLACEHOLDER = 'rechnung -storno "offene posten"';
             var REMOVE_TITLE = '@Localizer["AdvRemoveCondition"]';
 
             function attachToken() { return attachSel && attachSel.value === 'yes' ? 'has:attachment' : (attachSel && attachSel.value === 'no' ? '-has:attachment' : ''); }
             function stripAttach(q) { return q.replace(/(^|\s)-?has:\S+/gi, ' ').replace(/\s{2,}/g, ' ').trim(); }
             function withAttach(base) { var t = attachToken(); return (base + (t ? ' ' + t : '')).trim(); }
-
-            function createRow(field, terms) {
-                var row = document.createElement('div');
-                row.className = 'adv-row input-group input-group-sm mb-1';
+            function mkSelect(cls, opts, val) {
                 var sel = document.createElement('select');
-                sel.className = 'form-select form-select-sm adv-row-field flex-grow-0 w-auto';
-                FIELD_OPTS.forEach(function (o) {
+                sel.className = 'form-select form-select-sm ' + cls + ' flex-grow-0 w-auto';
+                opts.forEach(function (o) {
                     var op = document.createElement('option');
                     op.value = o.v; op.textContent = o.t;
-                    if (o.v === field) op.selected = true;
+                    if (o.v === val) op.selected = true;
                     sel.appendChild(op);
                 });
+                return sel;
+            }
+            function createRow(conn, field, terms) {
+                var row = document.createElement('div');
+                row.className = 'adv-row input-group input-group-sm mb-1';
+                row.appendChild(mkSelect('adv-row-conn', CONN_OPTS, conn || 'and'));
+                row.appendChild(mkSelect('adv-row-field', FIELD_OPTS, field || ''));
                 var inp = document.createElement('input');
                 inp.type = 'text'; inp.className = 'form-control form-control-sm adv-row-terms';
                 inp.autocomplete = 'off'; inp.placeholder = ROW_PLACEHOLDER; inp.value = terms || '';
+                row.appendChild(inp);
                 var rm = document.createElement('button');
                 rm.type = 'button'; rm.className = 'btn btn-outline-secondary adv-row-remove';
                 rm.title = REMOVE_TITLE; rm.innerHTML = '<i class="bi bi-x-lg"></i>';
-                row.appendChild(sel); row.appendChild(inp); row.appendChild(rm);
+                row.appendChild(rm);
                 return row;
+            }
+            // Konnektor der ersten Zeile ausblenden (Platz reservieren -> Felder bleiben ausgerichtet).
+            function syncConnectors() {
+                if (!advRows) return;
+                var rows = advRows.querySelectorAll('.adv-row');
+                for (var i = 0; i < rows.length; i++) {
+                    var c = rows[i].querySelector('.adv-row-conn');
+                    if (c) c.style.visibility = i === 0 ? 'hidden' : 'visible';
+                }
             }
             function renderRows(list) {
                 if (!advRows) return;
                 advRows.innerHTML = '';
-                if (!list || !list.length) list = [{ field: '', terms: '' }];
-                list.forEach(function (r) { advRows.appendChild(createRow(r.field, r.terms)); });
+                if (!list || !list.length) list = [{ conn: 'and', field: '', terms: '' }];
+                list.forEach(function (r) { advRows.appendChild(createRow(r.conn, r.field, r.terms)); });
+                syncConnectors();
             }
             function readRows() {
                 if (!advRows) return [];
                 return Array.prototype.map.call(advRows.querySelectorAll('.adv-row'), function (row) {
-                    return { field: row.querySelector('.adv-row-field').value, terms: row.querySelector('.adv-row-terms').value.trim() };
+                    return {
+                        conn: row.querySelector('.adv-row-conn').value,
+                        field: row.querySelector('.adv-row-field').value,
+                        terms: row.querySelector('.adv-row-terms').value.trim()
+                    };
                 });
             }
-            // Zeilen -> Query: jede Zeile als feld:(...) (bzw. nackt bei "Alle Felder"), UND-verknuepft.
+            // Zeilen -> Query: feld:(...) je Zeile, per Leerzeichen (UND) bzw. " OR " (ODER) verknuepft.
             function build() {
-                var parts = [];
+                var q = '';
                 readRows().forEach(function (r) {
                     var t = r.terms.replace(/[()]/g, '').trim();
                     if (!t) return;
-                    parts.push(r.field ? r.field + ':(' + t + ')' : t);
+                    var piece = r.field ? r.field + ':(' + t + ')' : t;
+                    if (!q) q = piece;
+                    else q += (r.conn === 'or' ? ' OR ' : ' ') + piece;
                 });
-                return parts.join(' ');
+                return q;
             }
             function boxFromBuilder() { if (box) box.value = withAttach(build()); }
-            // Query -> Zeilen: feld:(...)-Gruppen je eine Zeile, der Rest eine "Alle Felder"-Zeile.
+            function isOr(t) { return t === '|' || /^(or|oder)$/i.test(t); }
+            function isGroup(t) { return /^\w+:\(/.test(t); }
+            // Query -> Zeilen: feld:(...)-Gruppen und Top-Level-ODER werden Zeilen(-Konnektoren);
+            // ODER zwischen zwei nackten Begriffen bleibt innerhalb einer "Alle Felder"-Zeile.
             function parseIntoRows(query) {
                 var q = stripAttach(query).trim();
-                var rows = [];
-                var groupRe = /(\w+):\(([^)]*)\)/g;
-                var bare = q.replace(groupRe, function (m, f, inner) {
-                    if (VALIDFIELDS[f.toLowerCase()]) { rows.push({ field: f.toLowerCase(), terms: inner.trim() }); return ' '; }
-                    return m;
-                }).replace(/\s{2,}/g, ' ').trim();
-                if (bare) rows.unshift({ field: '', terms: bare });
+                var tokens = q.match(/\w+:\([^)]*\)|[-!]?\w+:"[^"]*"|[-!]?\w+:\S+|[-!]?"[^"]*"|\S+/g) || [];
+                var rows = [], cur = null, pendingConn = 'and';
+                function flush() { if (cur) { rows.push({ conn: cur.conn, field: cur.field, terms: cur.terms.join(' ') }); cur = null; } }
+                for (var k = 0; k < tokens.length; k++) {
+                    var t = tokens[k];
+                    if (isOr(t)) {
+                        var next = tokens[k + 1];
+                        if (cur && cur.field === '' && next && !isOr(next) && !isGroup(next)) { cur.terms.push('OR'); }
+                        else { flush(); pendingConn = 'or'; }
+                        continue;
+                    }
+                    var gm = t.match(/^(\w+):\(([\s\S]*)\)$/);
+                    if (gm && VALIDFIELDS[gm[1].toLowerCase()]) {
+                        flush();
+                        rows.push({ conn: pendingConn, field: gm[1].toLowerCase(), terms: gm[2].trim() });
+                        pendingConn = 'and';
+                        continue;
+                    }
+                    if (cur && cur.field === '') { cur.terms.push(t); }
+                    else { flush(); cur = { conn: pendingConn, field: '', terms: [t] }; pendingConn = 'and'; }
+                }
+                flush();
                 renderRows(rows);
             }
             function attachFromBox() {
@@ -1168,18 +1211,18 @@
 
             if (advRows) {
                 advRows.addEventListener('change', function (e) {
-                    if (e.target.classList.contains('adv-row-field') || e.target.classList.contains('adv-row-terms')) boxFromBuilder();
+                    if (e.target.classList.contains('adv-row-field') || e.target.classList.contains('adv-row-terms') || e.target.classList.contains('adv-row-conn')) boxFromBuilder();
                 });
                 advRows.addEventListener('keydown', function (e) {
                     if (e.key === 'Enter' && e.target.classList.contains('adv-row-terms')) boxFromBuilder();
                 });
                 advRows.addEventListener('click', function (e) {
                     var b = e.target.closest('.adv-row-remove');
-                    if (b) { var row = b.closest('.adv-row'); if (row) row.remove(); if (!advRows.querySelector('.adv-row')) renderRows([]); boxFromBuilder(); }
+                    if (b) { var row = b.closest('.adv-row'); if (row) row.remove(); if (!advRows.querySelector('.adv-row')) renderRows([]); syncConnectors(); boxFromBuilder(); }
                 });
             }
             if (addBtn) addBtn.addEventListener('click', function () {
-                var r = createRow('', ''); advRows.appendChild(r);
+                var r = createRow('and', '', ''); advRows.appendChild(r); syncConnectors();
                 var inp = r.querySelector('.adv-row-terms'); if (inp) inp.focus();
             });
             if (attachSel) attachSel.addEventListener('change', function () {
