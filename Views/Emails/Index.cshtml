@@ -1128,6 +1128,15 @@
             document.querySelectorAll('.adv-field').forEach(function (f) { f.addEventListener('input', refresh); });
             var applyBtn = document.getElementById('advApply');
             if (applyBtn) applyBtn.addEventListener('click', function () { if (box) { box.value = build(); box.focus(); } });
+            // On submit, compose the builder into the search box if the box is empty, so typing in
+            // the builder fields and pressing Search works without clicking "insert into search box".
+            var advForm = document.getElementById('searchForm');
+            if (advForm) advForm.addEventListener('submit', function () {
+                if (box && !box.value.trim()) {
+                    var composed = build();
+                    if (composed) box.value = composed;
+                }
+            });
             refresh();
         })();
     });
