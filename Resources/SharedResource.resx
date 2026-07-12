@@ -3138,4 +3138,7 @@
   <data name="AdvRemoveCondition" xml:space="preserve">
     <value>Remove condition</value>
   </data>
+  <data name="AdvBuilderCaseHint" xml:space="preserve">
+    <value>Search is case-insensitive.</value>
+  </data>
 </root>

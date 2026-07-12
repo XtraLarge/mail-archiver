@@ -3152,4 +3152,7 @@
   <data name="AdvRemoveCondition" xml:space="preserve">
     <value>Bedingung entfernen</value>
   </data>
+  <data name="AdvBuilderCaseHint" xml:space="preserve">
+    <value>Groß-/Kleinschreibung wird nicht beachtet.</value>
+  </data>
 </root>
