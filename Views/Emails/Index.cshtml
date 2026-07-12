@@ -83,34 +83,9 @@
                     <div class="col-12">
                                                     <div class="collapse mt-1" id="advSearchHelp">
                                 <div class="card card-body p-2">
-                                    <div class="row g-2">
-                                        <div class="col-12">
-                                            <label class="form-label mb-0 small" for="adv_scope">@Localizer["AdvScopeLabel"]</label>
-                                            <select id="adv_scope" class="form-select form-select-sm adv-field">
-                                                <option value="">@Localizer["AdvScopeAll"]</option>
-                                                <option value="subject">@Localizer["AdvBuilderSubject"]</option>
-                                                <option value="from">@Localizer["AdvBuilderFrom"]</option>
-                                                <option value="to">@Localizer["AdvBuilderTo"]</option>
-                                                <option value="body">@Localizer["AdvScopeBody"]</option>
-                                            </select>
-                                        </div>
-                                        <div class="col-12"><hr class="my-1 opacity-25"></div>
-                                        <div class="col-12 col-lg-6">
-                                            <label class="form-label mb-0 small" for="adv_all">@Localizer["AdvBuilderAll"]</label>
-                                            <input type="text" class="form-control form-control-sm adv-field" id="adv_all" autocomplete="off" placeholder="rechnung &quot;offene posten&quot;">
-                                        </div>
-                                        <div class="col-12 col-lg-6">
-                                            <label class="form-label mb-0 small" for="adv_any">@Localizer["AdvBuilderAny"]</label>
-                                            <input type="text" class="form-control form-control-sm adv-field" id="adv_any" autocomplete="off" placeholder="auto fahrrad">
-                                        </div>
-                                        <div class="col-12 col-lg-6">
-                                            <label class="form-label mb-0 small" for="adv_none">@Localizer["AdvBuilderNone"]</label>
-                                            <input type="text" class="form-control form-control-sm adv-field" id="adv_none" autocomplete="off" placeholder="werbung &quot;bereits bezahlt&quot;">
-                                        </div>
-                                        <div class="col-12 col-lg-6" id="adv_sub_col">
-                                            <label class="form-label mb-0 small" for="adv_sub">@Localizer["AdvBuilderSubstring"]</label>
-                                            <input type="text" class="form-control form-control-sm adv-field" id="adv_sub" autocomplete="off" placeholder="rechn">
-                                        </div>
+                                    <div id="adv_rows"></div>
+                                    <div>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" id="adv_add_row"><i class="bi bi-plus-lg me-1"></i>@Localizer["AdvAddCondition"]</button>
                                     </div>
                                     <hr class="my-2">
                                     <div class="small text-muted">
@@ -120,8 +95,7 @@
                                         @Localizer["AdvancedSearchInfo3"]<br>
                                         @Localizer["AdvancedSearchInfo4"]<br>
                                         @Localizer["AdvancedSearchInfo5"]<br>
-                                        @Localizer["AdvBuilderQuoteHint"]<br>
-                                        @Localizer["AdvBuilderGroupHint"]
+                                        @Localizer["AdvBuilderQuoteHint"]
                                     </div>
                                 </div>
                             </div>
@@ -1105,90 +1079,110 @@
             <text>initializeSelectionHandlers();</text>
         }
 
-        // Advanced-Suche: Baukasten, Suchfeld und Anhang-Auswahl halten sich gegenseitig aktuell.
-        // Bidirektional bei Enter/Verlassen (change/Enter). "Suchen in" scopet den Kombinations-Block
-        // als feld:(...)-Gruppe (Gmail-Stil); Anhang bleibt orthogonal hinter dem Suchfeld.
+        // Advanced-Suche: Zeilen-Builder. Jede Zeile = ein Feld (Alle/Betreff/Von/An/Text) + Begriffe;
+        // Zeilen sind UND-verknuepft und komponieren als feld:(...)-Gruppen. Bidirektional mit dem
+        // Suchfeld bei Enter/Verlassen. Anhang bleibt orthogonal hinter dem Suchfeld.
         (function () {
             var box = document.getElementById('SearchTerm');
             var attachSel = document.getElementById('adv_attach');
-            var scopeSel = document.getElementById('adv_scope');
-            var subCol = document.getElementById('adv_sub_col');
+            var advRows = document.getElementById('adv_rows');
+            var addBtn = document.getElementById('adv_add_row');
             var VALIDFIELDS = { subject: 1, from: 1, to: 1, body: 1 };
-            function val(id) { var e = document.getElementById(id); return e ? e.value.trim() : ''; }
-            function tokenize(s) { return s.match(/[-!]?"[^"]*"|\S+/g) || []; }
-            function toks(id) { return tokenize(val(id)); }
-            function scope() { return scopeSel ? scopeSel.value : ''; }
-            // Nackte (feldlose) Kombination aus den vier Baukasten-Feldern.
-            function innerCompose() {
-                var p = [];
-                toks('adv_all').forEach(function (w) { p.push(w); });
-                var anyT = toks('adv_any'); if (anyT.length) p.push(anyT.join(' OR '));
-                toks('adv_none').forEach(function (w) { p.push('-' + w.replace(/^-+/, '')); });
-                toks('adv_sub').forEach(function (w) { if (w.charAt(0) !== '"') p.push('*' + w.replace(/\*/g, '') + '*'); });
-                return p.join(' ');
-            }
-            // Bei gewaehltem Feld wird die Kombination als feld:(...) gescoped.
-            function build() {
-                var inner = innerCompose();
-                if (!inner) return '';
-                var sc = scope();
-                return sc ? sc + ':(' + inner + ')' : inner;
-            }
+            var FIELD_OPTS = [
+                { v: '', t: '@Localizer["AdvScopeAll"]' },
+                { v: 'subject', t: '@Localizer["AdvBuilderSubject"]' },
+                { v: 'from', t: '@Localizer["AdvBuilderFrom"]' },
+                { v: 'to', t: '@Localizer["AdvBuilderTo"]' },
+                { v: 'body', t: '@Localizer["AdvScopeBody"]' }
+            ];
+            var ROW_PLACEHOLDER = 'rechnung -storno "offene posten"';
+            var REMOVE_TITLE = '@Localizer["AdvRemoveCondition"]';
+
             function attachToken() { return attachSel && attachSel.value === 'yes' ? 'has:attachment' : (attachSel && attachSel.value === 'no' ? '-has:attachment' : ''); }
             function stripAttach(q) { return q.replace(/(^|\s)-?has:\S+/gi, ' ').replace(/\s{2,}/g, ' ').trim(); }
             function withAttach(base) { var t = attachToken(); return (base + (t ? ' ' + t : '')).trim(); }
-            function setField(id, value) { var e = document.getElementById(id); if (e) e.value = value; }
-            function isOr(t) { return t === '|' || /^(or|oder)$/i.test(t); }
-            // Zerlegt eine "nackte" Kombination in die vier Baukasten-Felder.
-            function fillBlock(inner) {
-                var all = [], any = [], none = [], subs = [];
-                var tokens = inner.match(/[-!]?\w+:"[^"]*"|[-!]?\w+:\S+|[-!]?"[^"]*"|\S+/g) || [];
-                for (var i = 0; i < tokens.length; i++) {
-                    var t = tokens[i];
-                    if (isOr(t)) continue;
-                    var neg = false;
-                    if (t.charAt(0) === '-' || t.charAt(0) === '!') { neg = true; t = t.substring(1); }
-                    if (t.length === 0) continue;
-                    if (neg) { none.push(t); continue; }
-                    if (t.length > 2 && t.charAt(0) === '*' && t.charAt(t.length - 1) === '*') { subs.push(t.slice(1, -1)); continue; }
-                    if (t.charAt(0) === '"' && t.charAt(t.length - 1) === '"') { all.push(t); continue; }
-                    var prevOr = i > 0 && isOr(tokens[i - 1]);
-                    var nextOr = i < tokens.length - 1 && isOr(tokens[i + 1]);
-                    (prevOr || nextOr ? any : all).push(t);
-                }
-                setField('adv_all', all.join(' '));
-                setField('adv_any', any.join(' '));
-                setField('adv_none', none.join(' '));
-                setField('adv_sub', subs.join(' '));
+
+            function createRow(field, terms) {
+                var row = document.createElement('div');
+                row.className = 'adv-row input-group input-group-sm mb-1';
+                var sel = document.createElement('select');
+                sel.className = 'form-select form-select-sm adv-row-field flex-grow-0 w-auto';
+                FIELD_OPTS.forEach(function (o) {
+                    var op = document.createElement('option');
+                    op.value = o.v; op.textContent = o.t;
+                    if (o.v === field) op.selected = true;
+                    sel.appendChild(op);
+                });
+                var inp = document.createElement('input');
+                inp.type = 'text'; inp.className = 'form-control form-control-sm adv-row-terms';
+                inp.autocomplete = 'off'; inp.placeholder = ROW_PLACEHOLDER; inp.value = terms || '';
+                var rm = document.createElement('button');
+                rm.type = 'button'; rm.className = 'btn btn-outline-secondary adv-row-remove';
+                rm.title = REMOVE_TITLE; rm.innerHTML = '<i class="bi bi-x-lg"></i>';
+                row.appendChild(sel); row.appendChild(inp); row.appendChild(rm);
+                return row;
             }
-            // Suchfeld -> Baukasten: Anhang abtrennen, ganze feld:(...)-Gruppe erkennen, Rest in den Block.
-            function parseIntoBuilder(query) {
+            function renderRows(list) {
+                if (!advRows) return;
+                advRows.innerHTML = '';
+                if (!list || !list.length) list = [{ field: '', terms: '' }];
+                list.forEach(function (r) { advRows.appendChild(createRow(r.field, r.terms)); });
+            }
+            function readRows() {
+                if (!advRows) return [];
+                return Array.prototype.map.call(advRows.querySelectorAll('.adv-row'), function (row) {
+                    return { field: row.querySelector('.adv-row-field').value, terms: row.querySelector('.adv-row-terms').value.trim() };
+                });
+            }
+            // Zeilen -> Query: jede Zeile als feld:(...) (bzw. nackt bei "Alle Felder"), UND-verknuepft.
+            function build() {
+                var parts = [];
+                readRows().forEach(function (r) {
+                    var t = r.terms.replace(/[()]/g, '').trim();
+                    if (!t) return;
+                    parts.push(r.field ? r.field + ':(' + t + ')' : t);
+                });
+                return parts.join(' ');
+            }
+            function boxFromBuilder() { if (box) box.value = withAttach(build()); }
+            // Query -> Zeilen: feld:(...)-Gruppen je eine Zeile, der Rest eine "Alle Felder"-Zeile.
+            function parseIntoRows(query) {
                 var q = stripAttach(query).trim();
-                var m = q.match(/^(subject|from|to|body):\(([\s\S]*)\)$/i);
-                var sc = '', inner = q;
-                if (m) { sc = m[1].toLowerCase(); inner = m[2]; }
-                if (scopeSel) scopeSel.value = VALIDFIELDS[sc] ? sc : '';
-                fillBlock(inner);
-                syncSubVisibility();
+                var rows = [];
+                var groupRe = /(\w+):\(([^)]*)\)/g;
+                var bare = q.replace(groupRe, function (m, f, inner) {
+                    if (VALIDFIELDS[f.toLowerCase()]) { rows.push({ field: f.toLowerCase(), terms: inner.trim() }); return ' '; }
+                    return m;
+                }).replace(/\s{2,}/g, ' ').trim();
+                if (bare) rows.unshift({ field: '', terms: bare });
+                renderRows(rows);
             }
             function attachFromBox() {
                 if (!attachSel || !box) return;
                 var q = box.value;
                 attachSel.value = /(^|\s)-has:\S+/i.test(q) ? 'no' : (/(^|\s)has:\S+/i.test(q) ? 'yes' : '');
             }
-            // Teilstring ist im Feld-Scope redundant (Feld-Treffer sind ohnehin Teilstring) -> ausblenden.
-            function syncSubVisibility() { if (subCol) subCol.style.display = scope() ? 'none' : ''; }
 
-            // Baukasten -> Suchfeld (+ Anhang-Token).
-            function boxFromBuilder() { if (box) box.value = withAttach(build()); syncSubVisibility(); }
-            document.querySelectorAll('.adv-field').forEach(function (f) {
-                f.addEventListener('change', boxFromBuilder);
-                f.addEventListener('keydown', function (e) { if (e.key === 'Enter') boxFromBuilder(); });
+            if (advRows) {
+                advRows.addEventListener('change', function (e) {
+                    if (e.target.classList.contains('adv-row-field') || e.target.classList.contains('adv-row-terms')) boxFromBuilder();
+                });
+                advRows.addEventListener('keydown', function (e) {
+                    if (e.key === 'Enter' && e.target.classList.contains('adv-row-terms')) boxFromBuilder();
+                });
+                advRows.addEventListener('click', function (e) {
+                    var b = e.target.closest('.adv-row-remove');
+                    if (b) { var row = b.closest('.adv-row'); if (row) row.remove(); if (!advRows.querySelector('.adv-row')) renderRows([]); boxFromBuilder(); }
+                });
+            }
+            if (addBtn) addBtn.addEventListener('click', function () {
+                var r = createRow('', ''); advRows.appendChild(r);
+                var inp = r.querySelector('.adv-row-terms'); if (inp) inp.focus();
             });
             if (attachSel) attachSel.addEventListener('change', function () {
                 if (box) box.value = withAttach(stripAttach(box.value));
             });
-            function builderFromBox() { if (box) { parseIntoBuilder(box.value.trim()); attachFromBox(); } }
+            function builderFromBox() { if (box) { parseIntoRows(box.value.trim()); attachFromBox(); } }
             if (box) {
                 box.addEventListener('change', builderFromBox);
                 box.addEventListener('keydown', function (e) { if (e.key === 'Enter') builderFromBox(); });
@@ -1199,8 +1193,8 @@
             if (advForm) advForm.addEventListener('submit', function () {
                 if (box && !box.value.trim()) { var c = withAttach(build()); if (c) box.value = c; }
             });
+            if (box && box.value.trim()) parseIntoRows(box.value.trim()); else renderRows([]);
             attachFromBox();
-            syncSubVisibility();
         })();
     });
 </script>

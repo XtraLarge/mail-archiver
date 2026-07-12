@@ -3132,4 +3132,10 @@
   <data name="AdvBuilderGroupHint" xml:space="preserve">
     <value>Whole combination on one field: "Search in" above – or directly field:(…), e.g. subject:(rechnung -storno).</value>
   </data>
+  <data name="AdvAddCondition" xml:space="preserve">
+    <value>Add condition</value>
+  </data>
+  <data name="AdvRemoveCondition" xml:space="preserve">
+    <value>Remove condition</value>
+  </data>
 </root>

@@ -3146,4 +3146,10 @@
   <data name="AdvBuilderGroupHint" xml:space="preserve">
     <value>Ganze Kombination auf ein Feld: „Suchen in" oben – oder direkt feld:(…), z. B. subject:(rechnung -storno).</value>
   </data>
+  <data name="AdvAddCondition" xml:space="preserve">
+    <value>Weitere Bedingung</value>
+  </data>
+  <data name="AdvRemoveCondition" xml:space="preserve">
+    <value>Bedingung entfernen</value>
+  </data>
 </root>
