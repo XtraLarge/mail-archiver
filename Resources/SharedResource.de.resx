@@ -1192,6 +1192,9 @@
   <data name="AdvancedSearch" xml:space="preserve">
     <value>erweiterte Suche</value>
   </data>
+  <data name="AdvBuilderReadonlyHint" xml:space="preserve">
+    <value>Nur Anzeige — die Suche wird aus dem Baukasten unten erzeugt</value>
+  </data>
   <data name="AdvancedSearchInfo0" xml:space="preserve">
     <value>• Wörter suchen als Wortstamm (Präfix): „rechnung“ findet auch „Rechnungen“</value>
   </data>
