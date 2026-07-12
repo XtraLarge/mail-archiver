@@ -1193,7 +1193,7 @@
     <value>Erweiterte Suche</value>
   </data>
   <data name="AdvBuilderReadonlyHint" xml:space="preserve">
-    <value>read-only</value>
+    <value>Bitte Erw. Suche nutzen!</value>
   </data>
   <data name="AdvancedSearchInfo0" xml:space="preserve">
     <value>• Wörter suchen als Wortstamm (Präfix): „rechnung“ findet auch „Rechnungen“</value>

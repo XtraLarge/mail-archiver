@@ -1190,7 +1190,7 @@
     <value>Advanced Search</value>
   </data>
   <data name="AdvBuilderReadonlyHint" xml:space="preserve">
-    <value>read-only</value>
+    <value>Please use advanced search!</value>
   </data>
   <data name="AdvancedSearchInfo0" xml:space="preserve">
     <value>• Words are matched as a stem (prefix): &quot;invoice&quot; also finds &quot;invoices&quot;</value>
