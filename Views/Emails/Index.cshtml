@@ -47,11 +47,7 @@
                 <div class="row">
                     <div class="col-12 col-md-6 col-lg-3 mb-3">
                         <label asp-for="SearchTerm" class="form-label">@Localizer["SearchTerm"]</label>
-                        <div class="input-group input-group-sm">
-                            <span class="input-group-text" id="advLock" style="display:none;"><i class="bi bi-lock-fill"></i></span>
-                            <input asp-for="SearchTerm" class="form-control form-control-sm" placeholder="@Localizer["SubjectSender"]" />
-                        </div>
-                        <div id="advReadonlyHint" class="form-text small text-muted" style="display:none;">@Localizer["AdvBuilderReadonlyHint"]</div>
+                        <input asp-for="SearchTerm" class="form-control form-control-sm" placeholder="@Localizer["SubjectSender"]" />
                         <div class="form-text small text-muted">
                             <a class="text-decoration-none" data-bs-toggle="collapse" href="#advSearchHelp" role="button" aria-expanded="false" aria-controls="advSearchHelp">
                                 <i class="bi bi-info-circle me-1"></i><strong>@Localizer["AdvancedSearch"]</strong> <i class="bi bi-chevron-down"></i>
@@ -1105,13 +1101,10 @@
             <text>initializeSelectionHandlers();</text>
         }
 
-        // Advanced search builder: compose the query syntax from the structured fields
+        // Advanced-Suche: Baukasten und Suchfeld halten sich gegenseitig aktuell.
+        // Bidirektional bei Enter oder Verlassen eines Feldes (change/Enter) — kein Read-only-Modus.
         (function () {
             var box = document.getElementById('SearchTerm');
-            var preview = document.getElementById('advPreview');
-            var advancedOpen = false;
-            var readonlyHint = document.getElementById('advReadonlyHint');
-            var advLock = document.getElementById('advLock');
             function val(id) { var e = document.getElementById(id); return e ? e.value.trim() : ''; }
             function words(id) { var s = val(id); return s ? s.split(/\s+/) : []; }
             function fieldVal(s) { return /\s/.test(s) ? '"' + s.replace(/"/g, '') + '"' : s; }
@@ -1127,22 +1120,6 @@
                 if (val('adv_to')) p.push('to:' + fieldVal(val('adv_to')));
                 return p.join(' ');
             }
-            function refresh() { if (preview) preview.textContent = build(); }
-            document.querySelectorAll('.adv-field').forEach(function (f) { f.addEventListener('input', function () { refresh(); if (advancedOpen && box) box.value = build(); }); });
-            var applyBtn = document.getElementById('advApply');
-            if (applyBtn) applyBtn.addEventListener('click', function () { if (box) { box.value = build(); box.focus(); } });
-            // On submit, compose the builder into the search box if the box is empty, so typing in
-            // the builder fields and pressing Search works without clicking "insert into search box".
-            var advForm = document.getElementById('searchForm');
-            if (advForm) advForm.addEventListener('submit', function () {
-                if (box && !box.value.trim()) {
-                    var composed = build();
-                    if (composed) box.value = composed;
-                }
-            });
-
-            // Reverse: when the advanced search is expanded, split the search box back into the
-            // builder fields (mirrors the forward composition) so the two stay in sync.
             function setField(id, value) { var e = document.getElementById(id); if (e) e.value = value; }
             function isOr(t) { return t === '|' || /^(or|oder)$/i.test(t); }
             function parseIntoBuilder(query) {
@@ -1172,26 +1149,27 @@
                 setField('adv_from', f.from);
                 setField('adv_to', f.to);
             }
-            var advCollapse = document.getElementById('advSearchHelp');
-            if (advCollapse) {
-                // Advanced mode: the search box becomes a read-only live preview of the builder.
-                advCollapse.addEventListener('show.bs.collapse', function () {
-                    if (box && box.value.trim()) parseIntoBuilder(box.value.trim());
-                    advancedOpen = true;
-                    if (box) { box.setAttribute('readonly', 'readonly'); box.value = build(); }
-                    if (readonlyHint) readonlyHint.style.display = '';
-                    if (advLock) advLock.style.display = '';
-                    refresh();
-                });
-                // Simple mode: the search box is editable again.
-                advCollapse.addEventListener('hide.bs.collapse', function () {
-                    advancedOpen = false;
-                    if (box) { box.removeAttribute('readonly'); }
-                    if (readonlyHint) readonlyHint.style.display = 'none';
-                    if (advLock) advLock.style.display = 'none';
-                });
+
+            // Builder -> Suchfeld: beim Verlassen (change) oder Enter das Suchfeld neu zusammensetzen.
+            function boxFromBuilder() { if (box) box.value = build(); }
+            document.querySelectorAll('.adv-field').forEach(function (f) {
+                f.addEventListener('change', boxFromBuilder);
+                f.addEventListener('keydown', function (e) { if (e.key === 'Enter') boxFromBuilder(); });
+            });
+            // Suchfeld -> Builder: beim Verlassen (change) oder Enter das Suchfeld in die Felder zerlegen.
+            function builderFromBox() { if (box) parseIntoBuilder(box.value.trim()); }
+            if (box) {
+                box.addEventListener('change', builderFromBox);
+                box.addEventListener('keydown', function (e) { if (e.key === 'Enter') builderFromBox(); });
             }
-            refresh();
+            // Beim Aufklappen der erweiterten Suche das aktuelle Suchfeld in den Baukasten uebernehmen.
+            var advCollapse = document.getElementById('advSearchHelp');
+            if (advCollapse) advCollapse.addEventListener('show.bs.collapse', builderFromBox);
+            // Sicherheitsnetz: wird ohne Verlassen abgeschickt und ist das Feld leer, aus dem Baukasten fuellen.
+            var advForm = document.getElementById('searchForm');
+            if (advForm) advForm.addEventListener('submit', function () {
+                if (box && !box.value.trim()) { var c = build(); if (c) box.value = c; }
+            });
         })();
     });
 </script>
