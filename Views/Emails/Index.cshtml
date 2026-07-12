@@ -76,7 +76,6 @@
                     <div class="col-12">
                                                     <div class="collapse mt-1" id="advSearchHelp">
                                 <div class="card card-body p-2">
-                                    <div class="fw-semibold mb-2"><i class="bi bi-sliders me-1"></i>@Localizer["AdvBuilderTitle"]</div>
                                     <div class="row g-2">
                                         <div class="col-12 col-md-6">
                                             <label class="form-label mb-0 small" for="adv_from">@Localizer["AdvBuilderFrom"]</label>
@@ -1175,14 +1174,14 @@
                 advCollapse.addEventListener('show.bs.collapse', function () {
                     if (box && box.value.trim()) parseIntoBuilder(box.value.trim());
                     advancedOpen = true;
-                    if (box) { box.setAttribute('readonly', 'readonly'); box.classList.add('bg-light'); box.value = build(); }
+                    if (box) { box.setAttribute('readonly', 'readonly'); box.value = build(); }
                     if (readonlyHint) readonlyHint.style.display = '';
                     refresh();
                 });
                 // Simple mode: the search box is editable again.
                 advCollapse.addEventListener('hide.bs.collapse', function () {
                     advancedOpen = false;
-                    if (box) { box.removeAttribute('readonly'); box.classList.remove('bg-light'); }
+                    if (box) { box.removeAttribute('readonly'); }
                     if (readonlyHint) readonlyHint.style.display = 'none';
                 });
             }
