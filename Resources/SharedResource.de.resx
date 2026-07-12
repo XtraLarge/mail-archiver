@@ -3123,13 +3123,13 @@
     <value>Anhang</value>
   </data>
   <data name="AdvAttachAny" xml:space="preserve">
-    <value>Anhang egal</value>
+    <value>Egal</value>
   </data>
   <data name="AdvAttachYes" xml:space="preserve">
-    <value>mit Anhang</value>
+    <value>Ja</value>
   </data>
   <data name="AdvAttachNo" xml:space="preserve">
-    <value>ohne Anhang</value>
+    <value>Nein</value>
   </data>
   <data name="AdvBuilderQuoteHint" xml:space="preserve">
     <value>Genauer Ausdruck: in Anführungszeichen setzen, z. B. "offene rechnung" - auch zum Ausschließen: -"offene rechnung".</value>

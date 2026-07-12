@@ -226,6 +226,10 @@ public class SearchTermParserTests
     public void Negated_substring() => Assert.True(Assert.Single(Assert.Single(Parse("-*teil*"))).Negated);
 
     [Fact]
+    public void Negation_complement_dual()
+        => Assert.Equal("rechnung:* | wd | 8", EmailCoreService.BuildNegationComplementTsQuery(EmailCoreService.ParseSearchClauses("-rechnung -wd -8")));
+
+    [Fact]
     public void Substring_keeps_like_metacharacters()
         => Assert.Equal("INV_2026", Assert.Single(Assert.Single(Parse("*INV_2026*"))).Text);
 

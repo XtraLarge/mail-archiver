@@ -105,10 +105,22 @@ namespace MailArchiver.Services.Core
 
                 if (groups.Count > 0 && groups.All(g => g.All(c => c.Kind == ClauseKind.Word)))
                 {
-                    // Fast path: a pure-word query -> one combined tsquery (single GIN scan).
-                    searchConditions.Add($"{FtsExpr} @@ to_tsquery('simple', @param{paramCounter})");
-                    parameters.Add(new Npgsql.NpgsqlParameter($"@param{paramCounter}", BuildWordTsQuery(groups)));
-                    paramCounter++;
+                    if (groups.All(g => g.All(c => c.Negated)))
+                    {
+                        // Pure-negation ("exclude only"): a flat NOT(tsv @@ q) seq-scans and re-tokenizes
+                        // every row's body (~minutes on large archives). Rewrite via De Morgan to an
+                        // index-accelerated positive set and filter by anti-membership on the primary key.
+                        searchConditions.Add($@"""Id"" NOT IN (SELECT ""Id"" FROM mail_archiver.""ArchivedEmails"" WHERE {FtsExpr} @@ to_tsquery('simple', @param{paramCounter}))");
+                        parameters.Add(new Npgsql.NpgsqlParameter($"@param{paramCounter}", BuildNegationComplementTsQuery(groups)));
+                        paramCounter++;
+                    }
+                    else
+                    {
+                        // Fast path: a pure-word query -> one combined tsquery (single GIN scan).
+                        searchConditions.Add($"{FtsExpr} @@ to_tsquery('simple', @param{paramCounter})");
+                        parameters.Add(new Npgsql.NpgsqlParameter($"@param{paramCounter}", BuildWordTsQuery(groups)));
+                        paramCounter++;
+                    }
                 }
                 else
                 {
@@ -683,6 +695,18 @@ namespace MailArchiver.Services.Core
         internal static string BuildWordTsQuery(List<List<SearchClause>> groups)
             => string.Join(" & ", groups.Select(g =>
                 g.Count == 1 ? WordAtom(g[0]) : "(" + string.Join(" | ", g.Select(WordAtom)) + ")"));
+
+        // De Morgan dual of a pure-negation word query: NOT(a & (b|c)) == a | (b & c). Turns an
+        // "exclude only" search into an index-usable positive set for an anti-membership filter.
+        internal static string BuildNegationComplementTsQuery(List<List<SearchClause>> groups)
+            => string.Join(" | ", groups.Select(g =>
+                g.Count == 1 ? PosAtom(g[0]) : "(" + string.Join(" & ", g.Select(PosAtom)) + ")"));
+
+        private static string PosAtom(SearchClause c)
+        {
+            var t = c.Text.Replace("'", "''");
+            return t + (t.Length >= MinPrefixLength ? ":*" : "");
+        }
 
         private (string OrderByClause, string SortColumn, bool IsTimestampSort) GetOrderByClause(string sortBy, string sortOrder)
         {
