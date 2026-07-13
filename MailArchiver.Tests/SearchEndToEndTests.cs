@@ -93,7 +93,7 @@ public class SearchEndToEndTests : IClassFixture<SearchDbFixture>
     [Fact] public async Task Field_from()
     { if (!_fx.Enabled) return; Assert.Equal(new HashSet<int>{1}, await Ids("from:cyberport")); }
 
-    [Fact] public async Task Short_token_exact_still_finds()
+    [Fact] public async Task Short_token_finds()
     { if (!_fx.Enabled) return; Assert.Equal(new HashSet<int>{1}, await Ids("wd")); }
 
     [Fact] public async Task Or_across_fields() // Codex: from:a OR from:b

@@ -110,7 +110,7 @@ namespace MailArchiver.Services.Core
                         // Pure-negation ("exclude only"): a flat NOT(tsv @@ q) seq-scans and re-tokenizes
                         // every row's body (~minutes on large archives). Rewrite via De Morgan to an
                         // index-accelerated positive set and filter by anti-membership on the primary key.
-                        searchConditions.Add($@"""Id"" NOT IN (SELECT ""Id"" FROM mail_archiver.""ArchivedEmails"" WHERE {FtsExpr} @@ to_tsquery('simple', @param{paramCounter}))");
+                        searchConditions.Add($@"e.""Id"" NOT IN (SELECT ""Id"" FROM mail_archiver.""ArchivedEmails"" WHERE {FtsExpr} @@ to_tsquery('simple', @param{paramCounter}))");
                         parameters.Add(new Npgsql.NpgsqlParameter($"@param{paramCounter}", BuildNegationComplementTsQuery(groups)));
                         paramCounter++;
                     }
@@ -251,7 +251,7 @@ namespace MailArchiver.Services.Core
             // Count query
             var countSql = $@"
                 SELECT COUNT(*)
-                FROM mail_archiver.""ArchivedEmails""
+                FROM mail_archiver.""ArchivedEmails"" e
                 {whereClause}";
 
             var totalCount = await ExecuteScalarQueryAsync<int>(countSql, CloneParameters(parameters));
@@ -472,7 +472,6 @@ namespace MailArchiver.Services.Core
             public bool Negated { get; init; }
         }
 
-        private const int MinPrefixLength = 3;
         private const int MaxClauseGroups = 256;
         private const string FtsExpr = @"to_tsvector('simple', COALESCE(""Subject"", '') || ' ' || COALESCE(""Body"", '') || ' ' || COALESCE(""From"", '') || ' ' || COALESCE(""To"", '') || ' ' || COALESCE(""Cc"", '') || ' ' || COALESCE(""Bcc"", ''))";
         private const string LowerConcatExpr = @"lower(COALESCE(""Subject"", '') || ' ' || COALESCE(""Body"", '') || ' ' || COALESCE(""From"", '') || ' ' || COALESCE(""To"", '') || ' ' || COALESCE(""Cc"", '') || ' ' || COALESCE(""Bcc"", ''))";
@@ -688,7 +687,7 @@ namespace MailArchiver.Services.Core
         internal static string WordAtom(SearchClause c)
         {
             var t = c.Text.Replace("'", "''");
-            return (c.Negated ? "!" : "") + t + (t.Length >= MinPrefixLength ? ":*" : "");
+            return (c.Negated ? "!" : "") + t + ":*";
         }
 
         // Efficient single combined tsquery for a pure-word query (AND of groups, OR within a group).
@@ -705,7 +704,7 @@ namespace MailArchiver.Services.Core
         private static string PosAtom(SearchClause c)
         {
             var t = c.Text.Replace("'", "''");
-            return t + (t.Length >= MinPrefixLength ? ":*" : "");
+            return t + ":*";
         }
 
         private (string OrderByClause, string SortColumn, bool IsTimestampSort) GetOrderByClause(string sortBy, string sortOrder)

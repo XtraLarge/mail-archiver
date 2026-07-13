@@ -29,10 +29,10 @@ public class SearchTermParserTests
     [Theory]
     [InlineData("wd")]
     [InlineData("tb")]
-    public void Short_word_is_exact_no_prefix(string input) => Assert.Equal(input, Ts(input));
+    public void Short_word_gets_prefix(string input) => Assert.Equal(input + ":*", Ts(input));
 
     [Fact] public void Multi_word_is_AND() => Assert.Equal("rechnung:* & mahnung:*", Ts("rechnung mahnung"));
-    [Fact] public void Mixed_length_words() => Assert.Equal("wd & red:* & 8 & tb", Ts("wd red 8 tb"));
+    [Fact] public void Mixed_length_words() => Assert.Equal("wd:* & red:* & 8:* & tb:*", Ts("wd red 8 tb"));
 
     [Theory]
     [InlineData("auto OR fahrrad")]
@@ -227,7 +227,7 @@ public class SearchTermParserTests
 
     [Fact]
     public void Negation_complement_dual()
-        => Assert.Equal("rechnung:* | wd | 8", EmailCoreService.BuildNegationComplementTsQuery(EmailCoreService.ParseSearchClauses("-rechnung -wd -8")));
+        => Assert.Equal("rechnung:* | wd:* | 8:*", EmailCoreService.BuildNegationComplementTsQuery(EmailCoreService.ParseSearchClauses("-rechnung -wd -8")));
 
     [Fact]
     public void Substring_keeps_like_metacharacters()
