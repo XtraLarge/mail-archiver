@@ -2153,9 +2153,6 @@ namespace MailArchiver.Services.Core
             }
         }
 
-        /// <summary>
-        /// Sorts the folder tree with INBOX at the top, then special folders, then alphabetically
-        /// </summary>
         // Builds the folder tree from (folderName, count) pairs. Extracted from GetFolderTreeAsync so
         // it can be unit-tested. Folder names that differ only in case are treated as one folder
         // (IMAP INBOX is case-insensitive): their counts are merged and the node is emitted once.
@@ -2227,6 +2224,9 @@ namespace MailArchiver.Services.Core
             return SortFolderTree(rootNodes);
         }
 
+        /// <summary>
+        /// Sorts the folder tree with INBOX at the top, then special folders, then alphabetically
+        /// </summary>
         private static List<FolderTreeNode> SortFolderTree(List<FolderTreeNode> nodes)
         {
             if (nodes == null || !nodes.Any())
