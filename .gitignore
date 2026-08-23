@@ -299,3 +299,6 @@ update_resource_files.ps1
 /exports
 /obj
 /.clinerules
+
+# Local config with real credentials (copy from appsettings.example.json)
+appsettings.json

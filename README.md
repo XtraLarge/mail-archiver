@@ -81,11 +81,11 @@ services:
     restart: always
     environment:
       # Database Connection
-      - ConnectionStrings__DefaultConnection=Host=postgres;Database=MailArchiver;Username=mailuser;Password=masterkey;
+      - ConnectionStrings__DefaultConnection=Host=postgres;Database=MailArchiver;Username=mailuser;Password=${DB_PASSWORD};
 
       # Authentication Settings
-      - Authentication__Username=admin
-      - Authentication__Password=secure123!
+      - Authentication__Username=${AUTH_USERNAME}
+      - Authentication__Password=${AUTH_PASSWORD}
 
       # TimeZone Settings
       - TimeZone__DisplayTimeZoneId=Etc/UCT
@@ -106,7 +106,7 @@ services:
     environment:
       POSTGRES_DB: MailArchiver
       POSTGRES_USER: mailuser
-      POSTGRES_PASSWORD: masterkey
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - ./postgres-data:/var/lib/postgresql/data
     networks:
@@ -122,9 +122,16 @@ networks:
   postgres:
 ```
 
-3. Edit the database configuration in the `docker-compose.yml` and set a secure password in the `POSTGRES_PASSWORD` variable and the `ConnectionString`.
+3. Create a `.env` file next to your `docker-compose.yml` and set strong, unique passwords:
+```env
+POSTGRES_PASSWORD=your_secure_db_password
+DB_PASSWORD=your_secure_db_password
+AUTH_USERNAME=your_admin_username
+AUTH_PASSWORD=your_secure_auth_password
+```
+> ⚠️ **Never commit your `.env` file to version control.** Add `.env` to your `.gitignore`.
 
-4. Definie a `Authentication__Username` and `Authentication__Password` which is used for the admin user.
+4. The `AUTH_USERNAME` and `AUTH_PASSWORD` variables from your `.env` file define the admin login credentials.
 
 5. Adjust the `TimeZone__DisplayTimeZoneId` environment variable to match your preferred timezone (default is "Etc/UCT"). You can use any IANA timezone identifier (e.g., "Europe/Berlin", "Asia/Tokyo").
 
@@ -153,9 +160,13 @@ docker compose restart
 - If you want, create other users and assign accounts.
 
 ## 🔐 Security Notes
-- Use strong passwords and change default credentials
+- **Never use default or example credentials in production.** All placeholder values (`CHANGE_ME`, etc.) must be replaced with strong, unique passwords before first start.
+- Use a `.env` file (or your secrets manager) to inject credentials — never hard-code them in `docker-compose.yml` or commit them to version control.
 - Consider implementing HTTPS with a reverse proxy in production
 - Regular backups of the PostgreSQL database recommended (see [Backup & Restore Guide](doc/BackupRestore.md) for detailed instructions)
+
+### Building from source
+If you build from the repository instead of using the Docker Hub image, copy `appsettings.example.json` to `appsettings.json` and fill in your credentials. The file `appsettings.json` is excluded from version control via `.gitignore`.
 
 ## ⚙️ Advanced Setup
 For a complete list of all configuration options, please refer to the [Setup Guide](doc/Setup.md).
